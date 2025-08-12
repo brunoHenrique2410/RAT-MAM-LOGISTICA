@@ -2,7 +2,6 @@ import streamlit as st
 from datetime import date, time
 from PIL import Image
 import io
-from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.utils import ImageReader
 from streamlit_drawable_canvas import st_canvas
@@ -117,4 +116,5 @@ if st.button("Gerar PDF Preenchido"):
     )
 
     st.success("✅ PDF gerado com sucesso!")
+
 
