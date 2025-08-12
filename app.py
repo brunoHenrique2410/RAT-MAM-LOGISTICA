@@ -4,7 +4,7 @@ from PIL import Image
 import io
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.utils import ImageReader
-from streamlit_drawable_canvas import st_canvas
+ 
 import numpy as np
 
 PDF_BASE = "RAT MAM.pdf"
@@ -116,5 +116,6 @@ if st.button("Gerar PDF Preenchido"):
     )
 
     st.success("✅ PDF gerado com sucesso!")
+
 
 
