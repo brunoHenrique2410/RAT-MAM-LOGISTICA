@@ -1,6 +1,6 @@
 streamlit==1.14.0
-PyMuPDF
-Pillow
-reportlab
-streamlit-drawable-canvas
-numpy
+PyMuPDF==1.19.6
+Pillow==8.4.0
+reportlab==3.6.6
+streamlit-drawable-canvas==0.4.1
+numpy==1.21.2
