@@ -1,0 +1,6 @@
+streamlit==1.14.0
+PyMuPDF
+Pillow
+reportlab
+streamlit-drawable-canvas
+numpy
