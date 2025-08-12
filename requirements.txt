@@ -1,6 +1,7 @@
 streamlit==1.14.0
 PyMuPDF==1.19.6
-Pillow==8.4.0
-reportlab==3.6.6
-streamlit-drawable-canvas==0.4.1
-numpy==1.21.2
+Pillow==10.0.0
+reportlab==4.4.3
+streamlit-drawable-canvas==0.9.3
+numpy==2.3.2
+altair==4.2.0
