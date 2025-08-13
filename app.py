@@ -1,373 +1,274 @@
-import base64
-import io
-from datetime import date, time
 
-from PIL import Image
 import streamlit as st
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.utils import ImageReader
-from reportlab.pdfgen.canvas import Canvas
-from pypdf import PdfReader, PdfWriter
+from datetime import datetime, date, time
+from io import BytesIO
+import fitz  # PyMuPDF
+from PIL import Image, ImageOps
+import numpy as np
 
-PDF_BASE = "RAT MAM.pdf"
+# ---- CONFIG ----
+PDF_BASE_PATH = "RAT MAM.pdf"  # deixe este arquivo na mesma pasta no deploy
+APP_TITLE = "RAT MAM - Preenchimento Automático"
 
-st.set_page_config(page_title="Formulário RAT MAM", layout="centered")
-st.title("📄 Preenchimento de RAT MAM")
+st.set_page_config(page_title=APP_TITLE, layout="centered")
+st.title("📄 " + APP_TITLE)
 
-# ---------- CSS: esconde campo técnico (assinatura) ----------
-st.markdown("""
-<style>
-/* Esconde o text_input onde guardamos o dataURL da assinatura */
-div:has(> input[aria-label="Assinatura (dataurl)"]) { display:none !important; }
-</style>
-""", unsafe_allow_html=True)
+st.caption("Preencha os campos abaixo. No final, clique em **Gerar PDF** para baixar o RAT preenchido.")
 
-# ---------- Componentes HTML/JS ----------
-def barcode_scanner_live_component():
-    # ZXing ao vivo — insere no textarea alvo via aria-label.
-    html = """
-    <div style="max-width:420px">
-      <h4 style="margin:4px 0">Scanner ao vivo (ZXing)</h4>
-      <video id="preview" playsinline autoplay muted style="width:100%;border:1px solid #999;"></video>
-      <canvas id="overlay" style="position:absolute; left:-9999px; top:-9999px;"></canvas>
-      <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap">
-        <button id="start">Iniciar</button>
-        <button id="stop">Parar</button>
-        <button id="insert">Inserir no formulário</button>
-      </div>
-      <pre id="out" style="background:#111;color:#0f0;padding:6px;min-height:60px;white-space:pre-wrap;margin-top:8px"></pre>
-      <small>Dica: toque no vídeo para focar (quando suportado).</small>
-    </div>
+# ---- Helpers ----
+@st.cache_data
+def load_pdf_bytes(path: str) -> bytes:
+    with open(path, "rb") as f:
+        return f.read()
 
-    <script type="module">
-      import { BrowserMultiFormatReader, NotFoundException } from "https://cdn.jsdelivr.net/npm/@zxing/library@0.21.2/esm/index.min.js";
-      const TARGET_LABEL = 'Números de Série (digite manualmente, um por linha)';
+def search_once(page, text):
+    res = page.search_for(text, hit_max=1)
+    if res:
+        return res[0]  # fitz.Rect
+    return None
 
-      const codeReader = new BrowserMultiFormatReader();
-      const video = document.getElementById('preview');
-      const overlay = document.getElementById('overlay');
-      const ctx = overlay.getContext('2d');
-      const out = document.getElementById('out');
-      const found = new Set();
-      let running = false;
-      let currentDeviceId = null;
+def put_right_of_label(page, label_text, content, dx=8, dy=0, fontsize=10):
+    """Escreve o 'content' à direita do rótulo 'label_text' na mesma linha."""
+    r = search_once(page, label_text)
+    if not r or not content:
+        return
+    x = r.x1 + dx
+    y = r.y0 + r.height/1.5 + dy  # alinhar com baseline aproximado
+    page.insert_text((x, y), str(content), fontsize=fontsize)
 
-      function drawGuide() {
-        const w = overlay.width, h = overlay.height;
-        ctx.clearRect(0,0,w,h);
-        ctx.beginPath();
-        ctx.moveTo(0, h/2);
-        ctx.lineTo(w, h/2);
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = "red";
-        ctx.stroke();
-      }
+def put_at(page, anchor_text, content, rel_rect=(0, 14, 400, 120), fontsize=10, align=0):
+    """Insere um bloco de texto em uma caixa relativa ao 'anchor_text'."""
+    r = search_once(page, anchor_text)
+    if not r or not content:
+        return
+    rect = fitz.Rect(r.x0 + rel_rect[0], r.y1 + rel_rect[1], r.x0 + rel_rect[2], r.y1 + rel_rect[3])
+    page.insert_textbox(rect, str(content), fontsize=fontsize, align=align)
 
-      async function start() {
-        if (running) return;
-        running = true;
-
-        try {
-          const devices = await BrowserMultiFormatReader.listVideoInputDevices();
-          if (devices && devices.length) {
-            const back = devices.find(d => /back|traseira|rear/i.test(d.label)) || devices[devices.length - 1];
-            currentDeviceId = back.deviceId;
-          }
-
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: currentDeviceId ? { deviceId: { exact: currentDeviceId } } : { facingMode: { exact: "environment" } },
-            audio: false
-          });
-          video.srcObject = stream;
-          await video.play();
-
-          const updateSize = () => {
-            overlay.width = video.videoWidth || 640;
-            overlay.height = video.videoHeight || 360;
-            drawGuide();
-          };
-          video.onloadedmetadata = updateSize;
-          window.addEventListener('resize', updateSize);
-          updateSize();
-
-          loopDecode();
-        } catch (e) {
-          console.log("Erro ao iniciar câmera:", e);
-          alert("Não foi possível iniciar a câmera. Verifique permissões/HTTPS.");
-          running = false;
-        }
-      }
-
-      async function loopDecode() {
-        if (!running) return;
-        try {
-          const result = await codeReader.decodeOnceFromVideoElement(video);
-          if (result && result.text) {
-            if (!found.has(result.text)) {
-              found.add(result.text);
-              out.textContent = Array.from(found).join("\\n");
-            }
-          }
-        } catch (e) {
-          if (!(e instanceof NotFoundException)) {
-            console.log("ZXing error:", e);
-          }
-        } finally {
-          if (running) requestAnimationFrame(loopDecode);
-        }
-      }
-
-      function stop() {
-        running = false;
-        try {
-          const stream = video.srcObject;
-          if (stream) stream.getTracks().forEach(t => t.stop());
-        } catch(e) {}
-        video.srcObject = null;
-      }
-
-      video.addEventListener('click', async () => {
-        const stream = video.srcObject;
-        if (!stream) return;
-        const track = stream.getVideoTracks()[0];
-        const caps = track.getCapabilities ? track.getCapabilities() : null;
-        if (caps && caps.focusMode && caps.focusMode.length) {
-          try { await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }); } catch(e) {}
-        }
-      });
-
-      document.getElementById('start').onclick = start;
-      document.getElementById('stop').onclick  = stop;
-
-      document.getElementById('insert').onclick = () => {
-        const ta = window.parent.document.querySelector('textarea[aria-label="'+TARGET_LABEL+'"]');
-        if (!ta) { alert("Campo de destino não encontrado."); return; }
-        const text = out.textContent.trim();
-        if (!text) { alert("Nenhum código lido ainda."); return; }
-        if (ta.value && !ta.value.endsWith("\\n")) ta.value += "\\n";
-        ta.value += text;
-        ta.dispatchEvent(new Event('input', { bubbles: true }));
-        alert("Códigos inseridos no formulário.");
-      };
-
-      // tenta iniciar automaticamente
-      start().catch(()=>{});
-    </script>
-    """
-    st.components.v1.html(html, height=560)
-
-def barcode_scanner_photo_component():
-    # Quagga2 por FOTO (upload) — robusto em Cloud/iframe
-    html = """
-    <div style="max-width:420px">
-      <h4 style="margin:4px 0">Ler código por foto</h4>
-      <p style="margin:6px 0 8px 0">Tire uma foto nítida, com boa luz, preferencialmente usando a câmera traseira.</p>
-      <input id="file" type="file" accept="image/*" capture="environment" style="margin-bottom:8px" />
-      <div>
-        <button id="decode">Ler código</button>
-      </div>
-      <pre id="out" style="background:#111;color:#0f0;padding:6px;min-height:60px;white-space:pre-wrap;margin-top:8px"></pre>
-    </div>
-
-    <script src="https://unpkg.com/@ericblade/quagga2/dist/quagga.js"></script>
-    <script>
-      const TARGET_LABEL = 'Números de Série (digite manualmente, um por linha)';
-
-      function appendToTextarea(val){
-        const ta = window.parent.document.querySelector('textarea[aria-label="'+TARGET_LABEL+'"]');
-        if (!ta) { alert("Campo de destino não encontrado."); return; }
-        if (ta.value && !ta.value.endsWith("\\n")) ta.value += "\\n";
-        ta.value += val;
-        ta.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-
-      document.getElementById('decode').onclick = () => {
-        const f = document.getElementById('file').files[0];
-        if (!f) { alert("Selecione ou fotografe um código primeiro."); return; }
-
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result;
-
-          Quagga.decodeSingle({
-            src: dataUrl,
-            numOfWorkers: 0,
-            inputStream: { size: 1024 },
-            locator: { patchSize: "medium", halfSample: true },
-            decoder: {
-              readers: [
-                "code_128_reader",
-                "ean_reader",
-                "ean_8_reader",
-                "code_39_reader",
-                "upc_reader",
-                "upc_e_reader"
-              ]
-            }
-          }, (result) => {
-            const out = document.getElementById('out');
-            if (result && result.codeResult && result.codeResult.code) {
-              const code = result.codeResult.code;
-              out.textContent = code;
-              appendToTextarea(code);
-              alert("Código inserido no formulário.");
-            } else {
-              out.textContent = "Não foi possível ler. Tente outra foto (mais perto, melhor luz/contraste).";
-            }
-          });
-        };
-        reader.readAsDataURL(f);
-      };
-    </script>
-    """
-    st.components.v1.html(html, height=320)
-
-def signature_pad_component():
-    html = """
-    <style>
-      #sig-wrap {border:1px dashed #999; width:400px; height:160px; background:#fff;}
-      #sig {width:100%; height:100%;}
-      .sig-btns {margin-top:6px; display:flex; gap:6px;}
-    </style>
-    <div>
-      <div id="sig-wrap"><canvas id="sig"></canvas></div>
-      <div class="sig-btns">
-        <button id="clear">Limpar</button>
-        <button id="use">Usar assinatura</button>
-      </div>
-    </div>
-    <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
-    <script>
-      const canvas = document.getElementById('sig');
-      const wrapper = document.getElementById('sig-wrap');
-      function resize(){
-        const ratio = Math.max(window.devicePixelRatio || 1, 1);
-        canvas.width = wrapper.clientWidth * ratio;
-        canvas.height = wrapper.clientHeight * ratio;
-        canvas.getContext("2d").scale(ratio, ratio);
-      }
-      window.addEventListener("resize", resize);
-      resize();
-      const pad = new SignaturePad(canvas, {backgroundColor: 'rgba(255,255,255,1)'});
-      document.getElementById('clear').onclick = () => pad.clear();
-      document.getElementById('use').onclick = () => {
-        if (pad.isEmpty()) { alert("Faça a assinatura."); return; }
-        const dataUrl = pad.toDataURL("image/png");
-        const input = window.parent.document.querySelector('input[aria-label="Assinatura (dataurl)"]');
-        if (input) {
-          input.value = dataUrl;
-          input.dispatchEvent(new Event('input', { bubbles: true }));
-          alert("Assinatura anexada.");
-        } else {
-          alert("Campo hidden de assinatura não encontrado.");
-        }
-      };
-    </script>
-    """
-    st.components.v1.html(html, height=230)
-
-# ---------- Formulário ----------
-numero_chamado = st.text_input("Número do chamado")
-data_atendimento = st.date_input("Data do atendimento", value=date.today())
-hora_inicio = st.time_input("Hora início", value=time(8, 0))
-hora_termino = st.time_input("Hora término", value=time(17, 0))
-distancia_km = st.number_input("Distância (KM)", min_value=0.0, step=0.1)
-
-st.subheader("Descrição de atendimento")
-modelo = st.text_input("Modelo do equipamento")
-
-SERIAIS_LABEL = "Números de Série (digite manualmente, um por linha)"
-seriais_text = st.text_area(SERIAIS_LABEL, placeholder="Ex.: ABC12345\nDEF67890")
-
-# Scanner: ao vivo + foto (as duas opções)
-with st.expander("📷 Ler serial por câmera (ao vivo)"):
-    barcode_scanner_live_component()
-with st.expander("🖼️ Ler serial por foto (fallback)"):
-    barcode_scanner_photo_component()
-
-descricao = st.text_area("Descrição da atividade")
-info_adicional = st.text_area("Informações adicionais")
-
-st.subheader("Informações do Cliente")
-cliente_nome = st.text_input("Nome")
-cliente_doc = st.text_input("Documento (CPF/RG)")
-cliente_tel = st.text_input("Telefone")
-
-# Campo hidden para assinatura (dataURL)
-sig_dataurl = st.text_input("Assinatura (dataurl)", value="", key="sig_dataurl_key")
-st.subheader("Assinatura do Cliente")
-signature_pad_component()
-
-# ---------- Gerar PDF ----------
-if st.button("Gerar PDF Preenchido"):
-    # 1) Cria overlay com ReportLab
-    packet = io.BytesIO()
-    can = Canvas(packet, pagesize=A4)
-    can.setFont("Helvetica", 10)
-
-    # A4 ~ 595 x 842 pt — ajuste fino conforme seu template
-    can.drawString(400, 775, (numero_chamado or ""))
-    can.drawString(130, 755, data_atendimento.strftime("%d/%m/%Y"))
-    can.drawString(350, 755, hora_inicio.strftime("%H:%M"))
-    can.drawString(450, 755, hora_termino.strftime("%H:%M"))
-    can.drawString(530, 755, f"{distancia_km:.1f}")
-
-    # Modelo + seriais (multi-linha)
-    can.drawString(80, 720, f"Modelo: {modelo or ''}")
-    y = 700
-    for line in (seriais_text or "").splitlines():
-        can.drawString(80, y, line[:100])
-        y -= 14
-        if y < 620:
-            break
-
-    can.drawString(80, 610, (descricao or "")[:300])
-    can.drawString(80, 590, (info_adicional or "")[:300])
-
-    can.drawString(100, 120, cliente_nome or "")
-    can.drawString(300, 120, cliente_doc or "")
-    can.drawString(450, 120, cliente_tel or "")
-
-    # Assinatura (dataURL -> imagem)
-    if isinstance(sig_dataurl, str) and sig_dataurl.startswith("data:image"):
-        try:
-            b64 = sig_dataurl.split(",")[1]
-            sig_bytes = base64.b64decode(b64)
-            sig_img = Image.open(io.BytesIO(sig_bytes)).convert("RGB")
-            sig_img = sig_img.resize((120, 60))
-            can.drawImage(ImageReader(sig_img), 450, 90)
-        except Exception as e:
-            st.warning(f"Assinatura não aplicada (erro ao processar): {e}")
-
-    can.save()
-    packet.seek(0)
-    overlay_bytes = packet.getvalue()
-
-    # 2) Mescla overlay com PDF base (pypdf)
-    base_reader = PdfReader(PDF_BASE)
-    writer = PdfWriter()
-
-    overlay_reader = PdfReader(io.BytesIO(overlay_bytes))
-    overlay_page = overlay_reader.pages[0]
-
-    base_page = base_reader.pages[0]
+def place_signature(page, anchor_text, image_bytes, rel_rect=(0, 10, 240, 90)):
+    """Coloca uma assinatura (PNG/JPG) abaixo/ao lado do anchor_text."""
+    if not image_bytes:
+        return
+    r = search_once(page, anchor_text)
+    if not r:
+        return
+    rect = fitz.Rect(r.x0 + rel_rect[0], r.y1 + rel_rect[1], r.x0 + rel_rect[2], r.y1 + rel_rect[3])
     try:
-        base_page.merge_page(overlay_page)   # pypdf >= 3
+        page.insert_image(rect, stream=image_bytes)
     except Exception:
-        base_page.mergePage(overlay_page)    # fallback p/ versões antigas
+        # Tenta converter para RGB e comprimir
+        img = Image.open(BytesIO(image_bytes)).convert("RGB")
+        out = BytesIO()
+        img.save(out, format="PNG")
+        page.insert_image(rect, stream=out.getvalue())
 
-    writer.add_page(base_page)
-    for i in range(1, len(base_reader.pages)):
-        writer.add_page(base_reader.pages[i])
+def normalize_phone(s: str) -> str:
+    digits = "".join(ch for ch in s if ch.isdigit())
+    if len(digits) == 11:
+        return f"({digits[:2]}) {digits[2:7]}-{digits[7:]}"
+    if len(digits) == 10:
+        return f"({digits[:2]}) {digits[2:6]}-{digits[6:]}"
+    return s
 
-    out_buf = io.BytesIO()
-    writer.write(out_buf)
-    out_buf.seek(0)
+def summarize_text(t: str, max_chars: int = 400) -> str:
+    t = " ".join(t.split())
+    if len(t) <= max_chars:
+        return t
+    # Corte elegante por sentença
+    cut = t[:max_chars]
+    last_dot = cut.rfind(". ")
+    if last_dot > 120:
+        return cut[: last_dot + 1] + " (resumo)"
+    return cut.strip() + "… (resumo)"
 
-    st.download_button(
-        "📥 Baixar PDF Preenchido",
-        data=out_buf.getvalue(),
-        file_name=f"RAT_{(numero_chamado or 'sem_numero')}.pdf",
-        mime="application/pdf",
+def decode_barcodes_from_pil(img: Image.Image):
+    """Decode 1D/QR usando pyzbar se disponível (opcional)."""
+    try:
+        from pyzbar.pyzbar import decode
+    except Exception:
+        return []
+    # Converter para cinza melhora a leitura
+    gray = ImageOps.grayscale(img)
+    arr = np.array(gray)
+    try:
+        decoded = decode(arr)
+        values = []
+        for obj in decoded:
+            try:
+                values.append(obj.data.decode("utf-8"))
+            except Exception:
+                values.append(str(obj.data))
+        return list(dict.fromkeys(values))  # únicos, preservando ordem
+    except Exception:
+        return []
+
+# ---- Sidebar: Deploy Info ----
+with st.sidebar:
+    st.subheader("👥 Uso por vários técnicos (remoto)")
+    st.markdown(
+        "- Publique no **Streamlit Community Cloud** ou **Hugging Face Spaces**.\n"
+        "- Inclua o **RAT MAM.pdf** no repositório/app.\n"
+        "- Dependências em `requirements.txt`.\n"
+        "- A webcam funciona pelo navegador: use **Capturar Código/Assinatura**.\n"
     )
-    st.success("✅ PDF gerado com sucesso!")
+    st.caption("Dica: ative HTTPS no deploy para permitir câmera em celulares.")
+
+# ---- Form Inputs ----
+st.header("1) Dados do Chamado")
+col1, col2 = st.columns(2)
+with col1:
+    num_chamado = st.text_input("Nº do chamado", placeholder="ex.: 123456")
+    data_atend = st.date_input("Data do atendimento", value=date.today())
+    hora_ini = st.time_input("Hora início", value=time(8, 0))
+with col2:
+    hora_fim = st.time_input("Hora término", value=time(10, 0))
+    distancia_km = st.text_input("Distância (KM)", placeholder="ex.: 12,3")
+
+st.header("2) Dados do Cliente (topo)")
+c1, c2 = st.columns(2)
+with c1:
+    cliente_nome = st.text_input("Cliente (Razão/Nome)", placeholder="ex.: Escola Municipal ABC")
+    endereco = st.text_input("Endereço", placeholder="Rua X, nº Y")
+    bairro = st.text_input("Bairro", placeholder="Centro")
+with c2:
+    cidade = st.text_input("Cidade", placeholder="Fortaleza - CE")
+    contato_nome = st.text_input("Contato", placeholder="Responsável no local")
+    contato_rg = st.text_input("RG do Contato", placeholder="RG/Documento")
+    contato_tel = st.text_input("Telefone do Contato", placeholder="(xx) xxxxx-xxxx")
+
+st.header("3) Descrição de Atendimento")
+# Scanner de seriais
+st.markdown("**Seriais** (adicione manualmente ou use câmera)")
+serials = st.tags_input("Seriais (enter para adicionar)", suggestions=[])
+
+cam_barcode = st.camera_input("Capturar código de barras / QR (opcional)")
+if cam_barcode is not None:
+    img = Image.open(cam_barcode)
+    decoded = decode_barcodes_from_pil(img)
+    if decoded:
+        st.success(f"Códigos detectados: {', '.join(decoded)}")
+        serials = list(dict.fromkeys(serials + decoded))
+    else:
+        st.warning("Nenhum código detectado na imagem. Tente aproximar/centralizar.")
+
+atividade = st.text_area("Descrição da atividade (palavras do técnico)",
+                         placeholder="Descreva o que foi feito, troca de equipamentos, configurações, testes, etc.",
+                         height=120)
+resumir = st.checkbox("Resumir automaticamente a descrição", value=True)
+info_extra = st.text_area("Informações adicionais (opcional)", height=80)
+
+st.header("4) Equipamento / Modelo / Nº de Série (linha dedicada)")
+equipamento = st.text_input("Equipamento", placeholder="ex.: Access Point / Switch / Nobreak")
+modelo = st.text_input("Modelo", placeholder="ex.: EAP-225 / SG3428MP / SMS XYZ")
+serie_principal = st.text_input("Nº de Série (principal)", placeholder="ex.: SN12345678")
+
+st.header("5) Dados do Técnico")
+tec_nome = st.text_input("Técnico - Nome", placeholder="Seu nome")
+tec_rg = st.text_input("Técnico - RG", placeholder="Documento do técnico")
+
+st.header("6) Assinaturas")
+st.markdown("**Assinatura do TÉCNICO** (faça upload de uma imagem com a assinatura ou fotografe no papel)")
+sig_tec_up = st.file_uploader("Upload assinatura do técnico (PNG/JPG)", type=["png", "jpg", "jpeg"], key="sigtec_up")
+sig_tec_cam = st.camera_input("Fotografar assinatura do técnico (opcional)", key="sigtec_cam")
+
+st.markdown("---")
+st.markdown("**CLIENTE** — Nome, Documento, Telefone e Assinatura")
+cli_nome_legivel = st.text_input("Cliente - Nome legível", value=cliente_nome)
+cli_rg = st.text_input("Cliente - Documento (RG/CPF)")
+cli_tel = st.text_input("Cliente - Telefone", value=contato_tel, placeholder="(xx) xxxxx-xxxx")
+sig_cli_up = st.file_uploader("Upload assinatura do cliente (PNG/JPG)", type=["png", "jpg", "jpeg"], key="sigcli_up")
+sig_cli_cam = st.camera_input("Fotografar assinatura do cliente (opcional)", key="sigcli_cam")
+
+st.markdown("---")
+
+# ---- Montagem do texto da descrição ----
+serials_text = ", ".join(serials) if serials else ""
+atividade_text = summarize_text(atividade) if resumir else atividade
+desc_bloc = ""
+if serials_text:
+    desc_bloc += f"SERIAIS: {serials_text}\n"
+if atividade_text.strip():
+    desc_bloc += f"ATIVIDADE: {atividade_text.strip()}\n"
+if info_extra.strip():
+    desc_bloc += f"INFO ADICIONAIS: {info_extra.strip()}\n"
+
+# ---- Botão Gerar PDF ----
+if st.button("🧾 Gerar PDF preenchido", type="primary"):
+    # Carrega base
+    try:
+        base_bytes = load_pdf_bytes(PDF_BASE_PATH)
+    except FileNotFoundError:
+        st.error(f"Arquivo base '{PDF_BASE_PATH}' não encontrado. Faça upload abaixo.")
+        base_bytes = None
+
+    if base_bytes is None:
+        base_upload = st.file_uploader("📎 Envie o arquivo base RAT MAM.pdf", type=["pdf"], key="base_pdf")
+        st.stop()
+
+    doc = fitz.open(stream=base_bytes, filetype="pdf")
+    page = doc[0]
+
+    # --- Campos topo
+    put_right_of_label(page, "Cliente:", cliente_nome)
+    put_right_of_label(page, "Endereço:", endereco)
+    put_right_of_label(page, "Bairro:", bairro)
+    put_right_of_label(page, "Cidade:", cidade)
+
+    put_right_of_label(page, "Contato:", contato_nome)
+    put_right_of_label(page, "RG:", contato_rg)
+    put_right_of_label(page, "Telefone:", normalize_phone(contato_tel))
+
+    # --- Data / Horas / Distância
+    data_fmt = data_atend.strftime("%d/%m/%Y")
+    put_right_of_label(page, "Data do atendimento:", data_fmt)
+    put_right_of_label(page, "Hora Inicio:", hora_ini.strftime("%H:%M"))
+    put_right_of_label(page, "Hora Termino:", hora_fim.strftime("%H:%M"))
+    put_right_of_label(page, "Distancia (KM)", distancia_km)
+
+    # --- Bloco grande: DESCRIÇÃO DE ATENDIMENTO
+    if desc_bloc:
+        put_at(page, "DESCRIÇÃO DE ATENDIMENTO", desc_bloc, rel_rect=(0, 20, 540, 240), fontsize=10, align=0)
+
+    # --- Linha: EQUIPAMENTO / MODELO / Nº DE SERIE
+    put_right_of_label(page, "EQUIPAMENTO:", equipamento)
+    put_right_of_label(page, "MODELO:", modelo)
+    put_right_of_label(page, "Nº DE SERIE:", serie_principal if serie_principal else (serials[0] if serials else ""))
+
+    # --- Técnico / RG / Assinatura
+    put_right_of_label(page, "TÉCNICO", tec_nome)
+    put_right_of_label(page, "RG:", tec_rg)  # Nota: há mais de um "RG:" no documento; este colocará à direita do primeiro match após topo
+    # Assinatura do técnico (imagem) próxima ao label "ASSINATURA:" (mesma linha do técnico)
+    sigtec_bytes = None
+    if sig_tec_up is not None:
+        sigtec_bytes = sig_tec_up.read()
+    elif sig_tec_cam is not None:
+        sigtec_bytes = sig_tec_cam.getvalue()
+    place_signature(page, "ASSINATURA:", sigtec_bytes, rel_rect=(180, -10, 380, 60))
+
+    # --- CLIENTE (nome legível, RG, telefone, assinatura) próximo ao rótulo "CLIENTE"
+    put_at(page, "CLIENTE", f"NOME LEGÍVEL: {cli_nome_legivel}\nRG/CPF: {cli_rg}\nTelefone: {normalize_phone(cli_tel)}",
+           rel_rect=(0, 10, 300, 90), fontsize=10, align=0)
+    sigcli_bytes = None
+    if sig_cli_up is not None:
+        sigcli_bytes = sig_cli_up.read()
+    elif sig_cli_cam is not None:
+        sigcli_bytes = sig_cli_cam.getvalue()
+    place_signature(page, "CLIENTE", sigcli_bytes, rel_rect=(310, 10, 560, 90))
+
+    # --- Nº CHAMADO (rodapé/lado direito)
+    put_right_of_label(page, "Nº CHAMADO", num_chamado, dx=12)
+
+    # --- Senha Mam / Fornecida Por (opcionais - não coletados aqui; pode-se incluir depois)
+    # Exemplo de como preencher se quiser:
+    # put_right_of_label(page, "Senha Mam:", "XXXXXX")
+    # put_right_of_label(page, "Fornecida Por", "Fulano")
+
+    # --- Exporta
+    out = BytesIO()
+    doc.save(out)
+    doc.close()
+
+    st.success("PDF gerado com sucesso!")
+    st.download_button("⬇️ Baixar RAT preenchido", data=out.getvalue(), file_name=f"RAT_MAM_preenchido_{num_chamado or 'sem_num'}.pdf", mime="application/pdf")
+
+
+
