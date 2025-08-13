@@ -107,7 +107,7 @@ def barcode_scanner_component(target_aria_label: str):
             txt => addVal(txt, "outqr"),
             _ => {{}}
           );
-        }}).catch(_=>{});
+        }}).catch(_=>{{}});
       }}
       function stopQR(){{ if (qrScanner){{ qrScanner.stop().then(()=>{{qrScanner.clear(); qrScanner=null;}}); }} }}
       startQR();
@@ -268,3 +268,4 @@ if st.button("Gerar PDF Preenchido"):
         mime="application/pdf",
     )
     st.success("✅ PDF gerado com sucesso!")
+
