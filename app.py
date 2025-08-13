@@ -14,119 +14,213 @@ PDF_BASE = "RAT MAM.pdf"
 st.set_page_config(page_title="Formulário RAT MAM", layout="centered")
 st.title("📄 Preenchimento de RAT MAM")
 
-# ---------- CSS p/ esconder campo técnico de assinatura ----------
+# ---------- CSS: esconde campo técnico (assinatura) ----------
 st.markdown("""
 <style>
-/* Esconde o text_input técnico onde guardamos o dataURL da assinatura */
+/* Esconde o text_input onde guardamos o dataURL da assinatura */
 div:has(> input[aria-label="Assinatura (dataurl)"]) { display:none !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- Componentes HTML: Scanner e Assinatura (sem f-strings) ----------
-def barcode_scanner_component():
-    # Usa Quagga2 (1D) + html5-qrcode (QR). Insere no textarea alvo via aria-label fixo.
+# ---------- Componentes HTML/JS ----------
+def barcode_scanner_live_component():
+    # ZXing ao vivo — insere no textarea alvo via aria-label.
     html = """
-    <div style="display:flex; gap:16px; flex-wrap:wrap">
-      <div style="min-width:320px">
-        <h4 style="margin:4px 0">Scanner Código de Barras (1D)</h4>
-        <video id="video" width="320" height="200" style="border:1px solid #999"></video>
-        <div style="margin-top:6px">
-          <button id="start1d">Iniciar</button>
-          <button id="stop1d">Parar</button>
-        </div>
-        <pre id="out1d" style="background:#111;color:#0f0;padding:6px;min-height:60px;white-space:pre-wrap"></pre>
+    <div style="max-width:420px">
+      <h4 style="margin:4px 0">Scanner ao vivo (ZXing)</h4>
+      <video id="preview" playsinline autoplay muted style="width:100%;border:1px solid #999;"></video>
+      <canvas id="overlay" style="position:absolute; left:-9999px; top:-9999px;"></canvas>
+      <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap">
+        <button id="start">Iniciar</button>
+        <button id="stop">Parar</button>
+        <button id="insert">Inserir no formulário</button>
       </div>
-
-      <div style="min-width:320px">
-        <h4 style="margin:4px 0">Scanner QR (opcional)</h4>
-        <div id="reader" style="width:320px"></div>
-        <div style="margin-top:6px">
-          <button id="stopqr">Parar QR</button>
-        </div>
-        <pre id="outqr" style="background:#111;color:#0f0;padding:6px;min-height:60px;white-space:pre-wrap"></pre>
-      </div>
+      <pre id="out" style="background:#111;color:#0f0;padding:6px;min-height:60px;white-space:pre-wrap;margin-top:8px"></pre>
+      <small>Dica: toque no vídeo para focar (quando suportado).</small>
     </div>
 
-    <div style="margin-top:10px">
-      <button id="send">Inserir no formulário</button>
+    <script type="module">
+      import { BrowserMultiFormatReader, NotFoundException } from "https://cdn.jsdelivr.net/npm/@zxing/library@0.21.2/esm/index.min.js";
+      const TARGET_LABEL = 'Números de Série (digite manualmente, um por linha)';
+
+      const codeReader = new BrowserMultiFormatReader();
+      const video = document.getElementById('preview');
+      const overlay = document.getElementById('overlay');
+      const ctx = overlay.getContext('2d');
+      const out = document.getElementById('out');
+      const found = new Set();
+      let running = false;
+      let currentDeviceId = null;
+
+      function drawGuide() {
+        const w = overlay.width, h = overlay.height;
+        ctx.clearRect(0,0,w,h);
+        ctx.beginPath();
+        ctx.moveTo(0, h/2);
+        ctx.lineTo(w, h/2);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "red";
+        ctx.stroke();
+      }
+
+      async function start() {
+        if (running) return;
+        running = true;
+
+        try {
+          const devices = await BrowserMultiFormatReader.listVideoInputDevices();
+          if (devices && devices.length) {
+            const back = devices.find(d => /back|traseira|rear/i.test(d.label)) || devices[devices.length - 1];
+            currentDeviceId = back.deviceId;
+          }
+
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: currentDeviceId ? { deviceId: { exact: currentDeviceId } } : { facingMode: { exact: "environment" } },
+            audio: false
+          });
+          video.srcObject = stream;
+          await video.play();
+
+          const updateSize = () => {
+            overlay.width = video.videoWidth || 640;
+            overlay.height = video.videoHeight || 360;
+            drawGuide();
+          };
+          video.onloadedmetadata = updateSize;
+          window.addEventListener('resize', updateSize);
+          updateSize();
+
+          loopDecode();
+        } catch (e) {
+          console.log("Erro ao iniciar câmera:", e);
+          alert("Não foi possível iniciar a câmera. Verifique permissões/HTTPS.");
+          running = false;
+        }
+      }
+
+      async function loopDecode() {
+        if (!running) return;
+        try {
+          const result = await codeReader.decodeOnceFromVideoElement(video);
+          if (result && result.text) {
+            if (!found.has(result.text)) {
+              found.add(result.text);
+              out.textContent = Array.from(found).join("\\n");
+            }
+          }
+        } catch (e) {
+          if (!(e instanceof NotFoundException)) {
+            console.log("ZXing error:", e);
+          }
+        } finally {
+          if (running) requestAnimationFrame(loopDecode);
+        }
+      }
+
+      function stop() {
+        running = false;
+        try {
+          const stream = video.srcObject;
+          if (stream) stream.getTracks().forEach(t => t.stop());
+        } catch(e) {}
+        video.srcObject = null;
+      }
+
+      video.addEventListener('click', async () => {
+        const stream = video.srcObject;
+        if (!stream) return;
+        const track = stream.getVideoTracks()[0];
+        const caps = track.getCapabilities ? track.getCapabilities() : null;
+        if (caps && caps.focusMode && caps.focusMode.length) {
+          try { await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }); } catch(e) {}
+        }
+      });
+
+      document.getElementById('start').onclick = start;
+      document.getElementById('stop').onclick  = stop;
+
+      document.getElementById('insert').onclick = () => {
+        const ta = window.parent.document.querySelector('textarea[aria-label="'+TARGET_LABEL+'"]');
+        if (!ta) { alert("Campo de destino não encontrado."); return; }
+        const text = out.textContent.trim();
+        if (!text) { alert("Nenhum código lido ainda."); return; }
+        if (ta.value && !ta.value.endsWith("\\n")) ta.value += "\\n";
+        ta.value += text;
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        alert("Códigos inseridos no formulário.");
+      };
+
+      // tenta iniciar automaticamente
+      start().catch(()=>{});
+    </script>
+    """
+    st.components.v1.html(html, height=560)
+
+def barcode_scanner_photo_component():
+    # Quagga2 por FOTO (upload) — robusto em Cloud/iframe
+    html = """
+    <div style="max-width:420px">
+      <h4 style="margin:4px 0">Ler código por foto</h4>
+      <p style="margin:6px 0 8px 0">Tire uma foto nítida, com boa luz, preferencialmente usando a câmera traseira.</p>
+      <input id="file" type="file" accept="image/*" capture="environment" style="margin-bottom:8px" />
+      <div>
+        <button id="decode">Ler código</button>
+      </div>
+      <pre id="out" style="background:#111;color:#0f0;padding:6px;min-height:60px;white-space:pre-wrap;margin-top:8px"></pre>
     </div>
 
     <script src="https://unpkg.com/@ericblade/quagga2/dist/quagga.js"></script>
-    <script src="https://unpkg.com/html5-qrcode"></script>
     <script>
       const TARGET_LABEL = 'Números de Série (digite manualmente, um por linha)';
-      const vals = new Set();
 
-      function addVal(v, box) {
-        if (!v) return;
-        vals.add(v);
-        document.getElementById(box).textContent = Array.from(vals).join("\\n");
-      }
-
-      // ---- 1D BARCODE (Quagga) ----
-      let running1d = false;
-      function start1D(){
-        if (running1d) return;
-        running1d = true;
-        Quagga.init({
-          inputStream: {
-            type: "LiveStream",
-            target: document.querySelector('#video'),
-            constraints: { facingMode: "environment" }
-          },
-          locator: { patchSize: "medium", halfSample: true },
-          numOfWorkers: 0,
-          decoder: {
-            readers: ["code_128_reader","ean_reader","ean_8_reader","code_39_reader","upc_reader","upc_e_reader"]
-          }
-        }, function(err){
-          if (err) { console.log(err); running1d=false; return; }
-          Quagga.start();
-        });
-        Quagga.onDetected(function(result){
-          const code = result && result.codeResult && result.codeResult.code;
-          if (code) addVal(code, "out1d");
-        });
-      }
-      function stop1D(){ if (running1d){ Quagga.stop(); running1d=false; } }
-      document.getElementById("start1d").onclick = start1D;
-      document.getElementById("stop1d").onclick  = stop1D;
-
-      // ---- QR (html5-qrcode) ----
-      let qrScanner = null;
-      function startQR(){
-        if (qrScanner) return;
-        qrScanner = new Html5Qrcode("reader");
-        Html5Qrcode.getCameras().then(cams => {
-          const id = cams && cams.length ? cams[cams.length-1].id : undefined;
-          qrScanner.start(
-            id || { facingMode: "environment" },
-            { fps: 10, qrbox: 200 },
-            txt => addVal(txt, "outqr"),
-            _ => {}
-          );
-        }).catch(_=>{});
-      }
-      function stopQR(){ if (qrScanner){ qrScanner.stop().then(()=>{qrScanner.clear(); qrScanner=null;}); } }
-      startQR();
-      document.getElementById("stopqr").onclick = stopQR;
-
-      // ---- Enviar p/ textarea alvo ----
-      document.getElementById("send").onclick = function(){
-        const s = Array.from(vals).join("\\n");
+      function appendToTextarea(val){
         const ta = window.parent.document.querySelector('textarea[aria-label="'+TARGET_LABEL+'"]');
-        if (ta) {
-          if (ta.value && !ta.value.endsWith("\\n")) ta.value += "\\n";
-          ta.value += s;
-          ta.dispatchEvent(new Event('input', { bubbles: true }));
-          alert("Códigos inseridos no formulário.");
-        } else {
-          alert("Campo de destino não encontrado.");
-        }
+        if (!ta) { alert("Campo de destino não encontrado."); return; }
+        if (ta.value && !ta.value.endsWith("\\n")) ta.value += "\\n";
+        ta.value += val;
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+
+      document.getElementById('decode').onclick = () => {
+        const f = document.getElementById('file').files[0];
+        if (!f) { alert("Selecione ou fotografe um código primeiro."); return; }
+
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result;
+
+          Quagga.decodeSingle({
+            src: dataUrl,
+            numOfWorkers: 0,
+            inputStream: { size: 1024 },
+            locator: { patchSize: "medium", halfSample: true },
+            decoder: {
+              readers: [
+                "code_128_reader",
+                "ean_reader",
+                "ean_8_reader",
+                "code_39_reader",
+                "upc_reader",
+                "upc_e_reader"
+              ]
+            }
+          }, (result) => {
+            const out = document.getElementById('out');
+            if (result && result.codeResult && result.codeResult.code) {
+              const code = result.codeResult.code;
+              out.textContent = code;
+              appendToTextarea(code);
+              alert("Código inserido no formulário.");
+            } else {
+              out.textContent = "Não foi possível ler. Tente outra foto (mais perto, melhor luz/contraste).";
+            }
+          });
+        };
+        reader.readAsDataURL(f);
       };
     </script>
     """
-    st.components.v1.html(html, height=520)
+    st.components.v1.html(html, height=320)
 
 def signature_pad_component():
     html = """
@@ -172,7 +266,7 @@ def signature_pad_component():
     """
     st.components.v1.html(html, height=230)
 
-# ------------------------------ Formulário ------------------------------
+# ---------- Formulário ----------
 numero_chamado = st.text_input("Número do chamado")
 data_atendimento = st.date_input("Data do atendimento", value=date.today())
 hora_inicio = st.time_input("Hora início", value=time(8, 0))
@@ -185,8 +279,11 @@ modelo = st.text_input("Modelo do equipamento")
 SERIAIS_LABEL = "Números de Série (digite manualmente, um por linha)"
 seriais_text = st.text_area(SERIAIS_LABEL, placeholder="Ex.: ABC12345\nDEF67890")
 
-if st.checkbox("📷 Usar scanner de código de barras/QR"):
-    barcode_scanner_component()
+# Scanner: ao vivo + foto (as duas opções)
+with st.expander("📷 Ler serial por câmera (ao vivo)"):
+    barcode_scanner_live_component()
+with st.expander("🖼️ Ler serial por foto (fallback)"):
+    barcode_scanner_photo_component()
 
 descricao = st.text_area("Descrição da atividade")
 info_adicional = st.text_area("Informações adicionais")
@@ -196,31 +293,32 @@ cliente_nome = st.text_input("Nome")
 cliente_doc = st.text_input("Documento (CPF/RG)")
 cliente_tel = st.text_input("Telefone")
 
-# Campo hidden para armazenar a assinatura (DataURL)
+# Campo hidden para assinatura (dataURL)
 sig_dataurl = st.text_input("Assinatura (dataurl)", value="", key="sig_dataurl_key")
 st.subheader("Assinatura do Cliente")
 signature_pad_component()
 
-# ------------------------------ Geração do PDF ------------------------------
+# ---------- Gerar PDF ----------
 if st.button("Gerar PDF Preenchido"):
-    # 1) Criar overlay com ReportLab
+    # 1) Cria overlay com ReportLab
     packet = io.BytesIO()
     can = Canvas(packet, pagesize=A4)
     can.setFont("Helvetica", 10)
 
-    # A4 aprox. 595 x 842 pt — ajuste fino conforme seu template
+    # A4 ~ 595 x 842 pt — ajuste fino conforme seu template
     can.drawString(400, 775, (numero_chamado or ""))
     can.drawString(130, 755, data_atendimento.strftime("%d/%m/%Y"))
     can.drawString(350, 755, hora_inicio.strftime("%H:%M"))
     can.drawString(450, 755, hora_termino.strftime("%H:%M"))
     can.drawString(530, 755, f"{distancia_km:.1f}")
 
+    # Modelo + seriais (multi-linha)
     can.drawString(80, 720, f"Modelo: {modelo or ''}")
     y = 700
     for line in (seriais_text or "").splitlines():
         can.drawString(80, y, line[:100])
         y -= 14
-        if y < 620:  # evita invadir campos seguintes
+        if y < 620:
             break
 
     can.drawString(80, 610, (descricao or "")[:300])
@@ -230,6 +328,7 @@ if st.button("Gerar PDF Preenchido"):
     can.drawString(300, 120, cliente_doc or "")
     can.drawString(450, 120, cliente_tel or "")
 
+    # Assinatura (dataURL -> imagem)
     if isinstance(sig_dataurl, str) and sig_dataurl.startswith("data:image"):
         try:
             b64 = sig_dataurl.split(",")[1]
@@ -244,25 +343,20 @@ if st.button("Gerar PDF Preenchido"):
     packet.seek(0)
     overlay_bytes = packet.getvalue()
 
-    # 2) Mesclar overlay com PDF base usando pypdf (sem libs nativas)
+    # 2) Mescla overlay com PDF base (pypdf)
     base_reader = PdfReader(PDF_BASE)
     writer = PdfWriter()
 
-    # carrega a página do overlay
     overlay_reader = PdfReader(io.BytesIO(overlay_bytes))
     overlay_page = overlay_reader.pages[0]
 
-    # pega a primeira página do PDF base e funde
     base_page = base_reader.pages[0]
     try:
-        base_page.merge_page(overlay_page)  # pypdf >=3
+        base_page.merge_page(overlay_page)   # pypdf >= 3
     except Exception:
-        # fallback para versões antigas (nome era mergePage)
-        base_page.mergePage(overlay_page)
+        base_page.mergePage(overlay_page)    # fallback p/ versões antigas
 
     writer.add_page(base_page)
-
-    # se o PDF base tiver mais páginas, mantém
     for i in range(1, len(base_reader.pages)):
         writer.add_page(base_reader.pages[i])
 
