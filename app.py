@@ -356,6 +356,3 @@ if st.button("🧾 Gerar PDF preenchido", type="primary"):
     except Exception as e:
         st.error(f"Falha ao gerar PDF: {e}")
         st.exception(e)
-
-st.markdown("---")
-st.caption("Se alguma posição sair fora, ajuste a seção ⚙️ Calibração e me diga o deslocamento ideal para eu fixar no código.")
