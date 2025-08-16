@@ -1,65 +1,46 @@
-
 import streamlit as st
-from datetime import datetime, date, time
+from datetime import date, time
 from io import BytesIO
-import fitz  # PyMuPDF
 from PIL import Image, ImageOps
 import numpy as np
 
-# ---- CONFIG ----
-PDF_BASE_PATH = "RAT MAM.pdf"  # deixe este arquivo na mesma pasta no deploy
-APP_TITLE = "RAT MAM - Preenchimento Automático"
+# -----------------------------------------------------------
+# APP: RAT MAM - Preenchimento automático (sem dependências nativas)
+# - Gera um overlay com ReportLab + mescla com pypdf
+# - Scanner de código via câmera é opcional (pyzbar se existir)
+# - Pronto para deploy remoto (Streamlit Cloud) no Python 3.13
+# -----------------------------------------------------------
+
+# Dependências puras (sem binários nativos)
+from reportlab.pdfgen import canvas as rl_canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.utils import ImageReader
+from pypdf import PdfReader, PdfWriter
+
+# pyzbar é opcional: só ativa scanner se estiver disponível
+try:
+    from pyzbar.pyzbar import decode as zbar_decode
+    HAS_ZBAR = True
+except Exception:
+    HAS_ZBAR = False
+
+# -----------------------
+# CONFIGURAÇÕES DO APP
+# -----------------------
+PDF_BASE_PATH = "RAT MAM.pdf"  # coloque o PDF base na mesma pasta do app
+APP_TITLE = "RAT MAM - Preenchimento Automático (overlay pypdf+reportlab)"
 
 st.set_page_config(page_title=APP_TITLE, layout="centered")
 st.title("📄 " + APP_TITLE)
+st.caption("Se o servidor não suportar bibliotecas nativas, este app funciona 100% com pypdf + reportlab. Scanner é opcional.")
 
-st.caption("Preencha os campos abaixo. No final, clique em **Gerar PDF** para baixar o RAT preenchido.")
-
-# ---- Helpers ----
+# -----------------------
+# HELPERS / UTILIDADES
+# -----------------------
 @st.cache_data
 def load_pdf_bytes(path: str) -> bytes:
     with open(path, "rb") as f:
         return f.read()
-
-def search_once(page, text):
-    res = page.search_for(text, hit_max=1)
-    if res:
-        return res[0]  # fitz.Rect
-    return None
-
-def put_right_of_label(page, label_text, content, dx=8, dy=0, fontsize=10):
-    """Escreve o 'content' à direita do rótulo 'label_text' na mesma linha."""
-    r = search_once(page, label_text)
-    if not r or not content:
-        return
-    x = r.x1 + dx
-    y = r.y0 + r.height/1.5 + dy  # alinhar com baseline aproximado
-    page.insert_text((x, y), str(content), fontsize=fontsize)
-
-def put_at(page, anchor_text, content, rel_rect=(0, 14, 400, 120), fontsize=10, align=0):
-    """Insere um bloco de texto em uma caixa relativa ao 'anchor_text'."""
-    r = search_once(page, anchor_text)
-    if not r or not content:
-        return
-    rect = fitz.Rect(r.x0 + rel_rect[0], r.y1 + rel_rect[1], r.x0 + rel_rect[2], r.y1 + rel_rect[3])
-    page.insert_textbox(rect, str(content), fontsize=fontsize, align=align)
-
-def place_signature(page, anchor_text, image_bytes, rel_rect=(0, 10, 240, 90)):
-    """Coloca uma assinatura (PNG/JPG) abaixo/ao lado do anchor_text."""
-    if not image_bytes:
-        return
-    r = search_once(page, anchor_text)
-    if not r:
-        return
-    rect = fitz.Rect(r.x0 + rel_rect[0], r.y1 + rel_rect[1], r.x0 + rel_rect[2], r.y1 + rel_rect[3])
-    try:
-        page.insert_image(rect, stream=image_bytes)
-    except Exception:
-        # Tenta converter para RGB e comprimir
-        img = Image.open(BytesIO(image_bytes)).convert("RGB")
-        out = BytesIO()
-        img.save(out, format="PNG")
-        page.insert_image(rect, stream=out.getvalue())
 
 def normalize_phone(s: str) -> str:
     digits = "".join(ch for ch in s if ch.isdigit())
@@ -73,7 +54,6 @@ def summarize_text(t: str, max_chars: int = 400) -> str:
     t = " ".join(t.split())
     if len(t) <= max_chars:
         return t
-    # Corte elegante por sentença
     cut = t[:max_chars]
     last_dot = cut.rfind(". ")
     if last_dot > 120:
@@ -81,38 +61,43 @@ def summarize_text(t: str, max_chars: int = 400) -> str:
     return cut.strip() + "… (resumo)"
 
 def decode_barcodes_from_pil(img: Image.Image):
-    """Decode 1D/QR usando pyzbar se disponível (opcional)."""
-    try:
-        from pyzbar.pyzbar import decode
-    except Exception:
+    """Decodifica 1D/QR com pyzbar, se existir; caso contrário, retorna []."""
+    if not HAS_ZBAR:
         return []
-    # Converter para cinza melhora a leitura
     gray = ImageOps.grayscale(img)
     arr = np.array(gray)
     try:
-        decoded = decode(arr)
+        decoded = zbar_decode(arr)
         values = []
         for obj in decoded:
             try:
                 values.append(obj.data.decode("utf-8"))
             except Exception:
                 values.append(str(obj.data))
-        return list(dict.fromkeys(values))  # únicos, preservando ordem
+        # únicos preservando ordem
+        return list(dict.fromkeys(values))
     except Exception:
         return []
 
-# ---- Sidebar: Deploy Info ----
-with st.sidebar:
-    st.subheader("👥 Uso por vários técnicos (remoto)")
-    st.markdown(
-        "- Publique no **Streamlit Community Cloud** ou **Hugging Face Spaces**.\n"
-        "- Inclua o **RAT MAM.pdf** no repositório/app.\n"
-        "- Dependências em `requirements.txt`.\n"
-        "- A webcam funciona pelo navegador: use **Capturar Código/Assinatura**.\n"
-    )
-    st.caption("Dica: ative HTTPS no deploy para permitir câmera em celulares.")
+def unique_merge(base_list, extra_list):
+    """Une duas listas de strings, mantendo ordem e removendo duplicatas."""
+    seen = set(base_list)
+    out = list(base_list)
+    for x in extra_list:
+        if x not in seen:
+            out.append(x)
+            seen.add(x)
+    return out
 
-# ---- Form Inputs ----
+# -----------------------
+# ESTADO DE SESSÃO
+# -----------------------
+if "serials" not in st.session_state:
+    st.session_state.serials = []
+
+# -----------------------
+# FORMULÁRIO
+# -----------------------
 st.header("1) Dados do Chamado")
 col1, col2 = st.columns(2)
 with col1:
@@ -123,7 +108,7 @@ with col2:
     hora_fim = st.time_input("Hora término", value=time(10, 0))
     distancia_km = st.text_input("Distância (KM)", placeholder="ex.: 12,3")
 
-st.header("2) Dados do Cliente (topo)")
+st.header("2) Dados do Cliente (topo do PDF)")
 c1, c2 = st.columns(2)
 with c1:
     cliente_nome = st.text_input("Cliente (Razão/Nome)", placeholder="ex.: Escola Municipal ABC")
@@ -136,27 +121,43 @@ with c2:
     contato_tel = st.text_input("Telefone do Contato", placeholder="(xx) xxxxx-xxxx")
 
 st.header("3) Descrição de Atendimento")
-# Scanner de seriais
-st.markdown("**Seriais** (adicione manualmente ou use câmera)")
-serials = st.tags_input("Seriais (enter para adicionar)", suggestions=[])
 
-cam_barcode = st.camera_input("Capturar código de barras / QR (opcional)")
-if cam_barcode is not None:
-    img = Image.open(cam_barcode)
-    decoded = decode_barcodes_from_pil(img)
-    if decoded:
-        st.success(f"Códigos detectados: {', '.join(decoded)}")
-        serials = list(dict.fromkeys(serials + decoded))
-    else:
-        st.warning("Nenhum código detectado na imagem. Tente aproximar/centralizar.")
+# Seriais (manuais)
+seriais_man = st.text_area("Seriais (um por linha)", placeholder="SN0012345\nSN00ABC678\n...")
+if st.button("Aplicar seriais manuais"):
+    parsed = [ln.strip() for ln in seriais_man.splitlines() if ln.strip()]
+    st.session_state.serials = unique_merge([], parsed)
+    st.success(f"{len(st.session_state.serials)} serial(is) aplicado(s).")
 
-atividade = st.text_area("Descrição da atividade (palavras do técnico)",
-                         placeholder="Descreva o que foi feito, troca de equipamentos, configurações, testes, etc.",
-                         height=120)
+# Scanner de seriais por câmera (opcional)
+if HAS_ZBAR:
+    cam_barcode = st.camera_input("Capturar código de barras / QR (opcional)")
+    if cam_barcode is not None:
+        img = Image.open(cam_barcode)
+        decoded = decode_barcodes_from_pil(img)
+        if decoded:
+            st.session_state.serials = unique_merge(st.session_state.serials, decoded)
+            st.success(f"Detectados: {', '.join(decoded)}")
+        else:
+            st.info("Nenhum código detectado na imagem. Tente aproximar/centralizar.")
+else:
+    st.caption("Scanner desabilitado (pyzbar não instalado). Os seriais podem ser inseridos manualmente.")
+
+# Mostra a lista atual de seriais
+if st.session_state.serials:
+    st.markdown("**Seriais atuais:**")
+    for s in st.session_state.serials:
+        st.write(f"• {s}")
+
+atividade = st.text_area(
+    "Descrição da atividade (palavras do técnico)",
+    placeholder="Descreva o que foi feito: troca/configuração de equipamentos, testes, resultados etc.",
+    height=120,
+)
 resumir = st.checkbox("Resumir automaticamente a descrição", value=True)
 info_extra = st.text_area("Informações adicionais (opcional)", height=80)
 
-st.header("4) Equipamento / Modelo / Nº de Série (linha dedicada)")
+st.header("4) Equipamento / Modelo / Nº de Série (linha dedicada no PDF)")
 equipamento = st.text_input("Equipamento", placeholder="ex.: Access Point / Switch / Nobreak")
 modelo = st.text_input("Modelo", placeholder="ex.: EAP-225 / SG3428MP / SMS XYZ")
 serie_principal = st.text_input("Nº de Série (principal)", placeholder="ex.: SN12345678")
@@ -166,109 +167,195 @@ tec_nome = st.text_input("Técnico - Nome", placeholder="Seu nome")
 tec_rg = st.text_input("Técnico - RG", placeholder="Documento do técnico")
 
 st.header("6) Assinaturas")
-st.markdown("**Assinatura do TÉCNICO** (faça upload de uma imagem com a assinatura ou fotografe no papel)")
+st.markdown("**Assinatura do TÉCNICO** (upload ou foto)")
 sig_tec_up = st.file_uploader("Upload assinatura do técnico (PNG/JPG)", type=["png", "jpg", "jpeg"], key="sigtec_up")
 sig_tec_cam = st.camera_input("Fotografar assinatura do técnico (opcional)", key="sigtec_cam")
 
 st.markdown("---")
-st.markdown("**CLIENTE** — Nome, Documento, Telefone e Assinatura")
+st.markdown("**CLIENTE** — Nome legível, Documento, Telefone e Assinatura")
 cli_nome_legivel = st.text_input("Cliente - Nome legível", value=cliente_nome)
 cli_rg = st.text_input("Cliente - Documento (RG/CPF)")
 cli_tel = st.text_input("Cliente - Telefone", value=contato_tel, placeholder="(xx) xxxxx-xxxx")
 sig_cli_up = st.file_uploader("Upload assinatura do cliente (PNG/JPG)", type=["png", "jpg", "jpeg"], key="sigcli_up")
 sig_cli_cam = st.camera_input("Fotografar assinatura do cliente (opcional)", key="sigcli_cam")
 
-st.markdown("---")
-
-# ---- Montagem do texto da descrição ----
-serials_text = ", ".join(serials) if serials else ""
+# Montagem do bloco de descrição
+serials_text = ", ".join(st.session_state.serials) if st.session_state.serials else ""
 atividade_text = summarize_text(atividade) if resumir else atividade
 desc_bloc = ""
 if serials_text:
     desc_bloc += f"SERIAIS: {serials_text}\n"
-if atividade_text.strip():
+if (atividade_text or "").strip():
     desc_bloc += f"ATIVIDADE: {atividade_text.strip()}\n"
-if info_extra.strip():
+if (info_extra or "").strip():
     desc_bloc += f"INFO ADICIONAIS: {info_extra.strip()}\n"
 
-# ---- Botão Gerar PDF ----
-if st.button("🧾 Gerar PDF preenchido", type="primary"):
-    # Carrega base
-    try:
-        base_bytes = load_pdf_bytes(PDF_BASE_PATH)
-    except FileNotFoundError:
-        st.error(f"Arquivo base '{PDF_BASE_PATH}' não encontrado. Faça upload abaixo.")
-        base_bytes = None
+# -----------------------
+# CALIBRAÇÃO (overlay)
+# -----------------------
+with st.expander("⚙️ Calibração (apenas se o layout sair fora do lugar)", expanded=False):
+    st.write("Unidade: pontos (1 pt ≈ 0,35 mm). A4 = 595 x 842 pt.")
+    off_top_x = st.number_input("Ajuste X (Topo: Cliente/Endereço/Bairro/Cidade/Contato/RG/Telefone)", -200, 200, 0)
+    off_top_y = st.number_input("Ajuste Y (Topo)", -200, 200, 0)
+    off_desc_x = st.number_input("Ajuste X (Bloco DESCRIÇÃO)", -200, 200, 0)
+    off_desc_y = st.number_input("Ajuste Y (Bloco DESCRIÇÃO)", -200, 200, 0)
+    off_eqp_x = st.number_input("Ajuste X (Linha EQUIPAMENTO/MODELO/SÉRIE)", -200, 200, 0)
+    off_eqp_y = st.number_input("Ajuste Y (Linha EQUIPAMENTO/MODELO/SÉRIE)", -200, 200, 0)
+    off_tec_x = st.number_input("Ajuste X (Técnico/RG/Assinatura)", -200, 200, 0)
+    off_tec_y = st.number_input("Ajuste Y (Técnico/RG/Assinatura)", -200, 200, 0)
+    off_cli_x = st.number_input("Ajuste X (Cliente rodapé: Nome/RG/Tel/Assinatura)", -200, 200, 0)
+    off_cli_y = st.number_input("Ajuste Y (Cliente rodapé)", -200, 200, 0)
+    off_chamado_x = st.number_input("Ajuste X (Nº CHAMADO)", -200, 200, 0)
+    off_chamado_y = st.number_input("Ajuste Y (Nº CHAMADO)", -200, 200, 0)
 
-    if base_bytes is None:
-        base_upload = st.file_uploader("📎 Envie o arquivo base RAT MAM.pdf", type=["pdf"], key="base_pdf")
-        st.stop()
+# -----------------------
+# GERAÇÃO DO PDF
+# -----------------------
+def build_overlay_pdf(base_bytes: bytes) -> bytes:
+    """
+    Cria um overlay com reportlab (posições aproximadas) e mescla na 1ª página do PDF base.
+    Padrões já estão ajustados para um layout típico do RAT MAM; use a calibração para ajustes finos.
+    """
+    # Página A4 (595 x 842 pt)
+    packet = BytesIO()
+    c = rl_canvas.Canvas(packet, pagesize=A4)
+    c.setFont("Helvetica", 10)
 
-    doc = fitz.open(stream=base_bytes, filetype="pdf")
-    page = doc[0]
+    # --- Topo (Cliente/Endereço/Bairro/Cidade/Contato/RG/Telefone/Data/Horas/KM)
+    x0, y0 = 80 + off_top_x, 780 + off_top_y
+    line = 14  # espaçamento vertical entre linhas
 
-    # --- Campos topo
-    put_right_of_label(page, "Cliente:", cliente_nome)
-    put_right_of_label(page, "Endereço:", endereco)
-    put_right_of_label(page, "Bairro:", bairro)
-    put_right_of_label(page, "Cidade:", cidade)
+    # Cliente / Endereço / Bairro / Cidade
+    c.drawString(x0, y0, str(cliente_nome or ""))
+    c.drawString(x0, y0 - line, str(endereco or ""))
+    c.drawString(x0, y0 - 2*line, str(bairro or ""))
+    c.drawString(x0 + 260, y0 - 2*line, str(cidade or ""))
 
-    put_right_of_label(page, "Contato:", contato_nome)
-    put_right_of_label(page, "RG:", contato_rg)
-    put_right_of_label(page, "Telefone:", normalize_phone(contato_tel))
+    # Contato / RG / Telefone
+    c.drawString(x0, y0 - 3*line, str(contato_nome or ""))
+    c.drawString(x0 + 180, y0 - 3*line, str(contato_rg or ""))
+    c.drawString(x0 + 330, y0 - 3*line, normalize_phone(contato_tel or ""))
 
-    # --- Data / Horas / Distância
-    data_fmt = data_atend.strftime("%d/%m/%Y")
-    put_right_of_label(page, "Data do atendimento:", data_fmt)
-    put_right_of_label(page, "Hora Inicio:", hora_ini.strftime("%H:%M"))
-    put_right_of_label(page, "Hora Termino:", hora_fim.strftime("%H:%M"))
-    put_right_of_label(page, "Distancia (KM)", distancia_km)
+    # Data do atendimento / Hora início / Hora término / Distância (KM)
+    c.drawString(x0,       y0 - 4*line, (data_atend.strftime("%d/%m/%Y") if data_atend else ""))
+    c.drawString(x0 + 160, y0 - 4*line, (hora_ini.strftime("%H:%M") if hora_ini else ""))
+    c.drawString(x0 + 260, y0 - 4*line, (hora_fim.strftime("%H:%M") if hora_fim else ""))
+    c.drawString(x0 + 360, y0 - 4*line, str(distancia_km or ""))
 
-    # --- Bloco grande: DESCRIÇÃO DE ATENDIMENTO
+    # --- Descrição (caixa grande)
+    x_desc, y_desc = 60 + off_desc_x, 610 + off_desc_y
+    w_desc, h_desc = 480, 150
     if desc_bloc:
-        put_at(page, "DESCRIÇÃO DE ATENDIMENTO", desc_bloc, rel_rect=(0, 20, 540, 240), fontsize=10, align=0)
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import Paragraph, Frame
+        from reportlab.lib.enums import TA_LEFT
+        styles = getSampleStyleSheet()
+        styleN = styles["Normal"]
+        styleN.fontName = "Helvetica"
+        styleN.fontSize = 10
+        styleN.leading = 12
+        styleN.alignment = TA_LEFT
+        frame = Frame(x_desc, y_desc - h_desc + 150, w_desc, h_desc, showBoundary=0)
+        story = [Paragraph(desc_bloc.replace("\n", "<br/>"), styleN)]
+        frame.addFromList(story, c)
 
-    # --- Linha: EQUIPAMENTO / MODELO / Nº DE SERIE
-    put_right_of_label(page, "EQUIPAMENTO:", equipamento)
-    put_right_of_label(page, "MODELO:", modelo)
-    put_right_of_label(page, "Nº DE SERIE:", serie_principal if serie_principal else (serials[0] if serials else ""))
+    # --- Linha: EQUIPAMENTO / MODELO / Nº DE SÉRIE
+    x_eqp, y_eqp = 70 + off_eqp_x, 560 + off_eqp_y
+    c.drawString(x_eqp, y_eqp, str(equipamento or ""))
+    c.drawString(x_eqp + 180, y_eqp, str(modelo or ""))
+    serie_final = serie_principal or (st.session_state.serials[0] if st.session_state.serials else "")
+    c.drawString(x_eqp + 360, y_eqp, str(serie_final))
 
-    # --- Técnico / RG / Assinatura
-    put_right_of_label(page, "TÉCNICO", tec_nome)
-    put_right_of_label(page, "RG:", tec_rg)  # Nota: há mais de um "RG:" no documento; este colocará à direita do primeiro match após topo
-    # Assinatura do técnico (imagem) próxima ao label "ASSINATURA:" (mesma linha do técnico)
+    # --- Técnico (nome e RG) + assinatura do técnico
+    x_tec, y_tec = 70 + off_tec_x, 520 + off_tec_y
+    c.drawString(x_tec, y_tec, str(tec_nome or ""))
+    c.drawString(x_tec + 180, y_tec, str(tec_rg or ""))
+
     sigtec_bytes = None
     if sig_tec_up is not None:
         sigtec_bytes = sig_tec_up.read()
     elif sig_tec_cam is not None:
         sigtec_bytes = sig_tec_cam.getvalue()
-    place_signature(page, "ASSINATURA:", sigtec_bytes, rel_rect=(180, -10, 380, 60))
+    if sigtec_bytes:
+        try:
+            c.drawImage(ImageReader(BytesIO(sigtec_bytes)), x_tec + 310, y_tec - 10,
+                        width=160, height=40, preserveAspectRatio=True, mask='auto')
+        except Exception:
+            pass
 
-    # --- CLIENTE (nome legível, RG, telefone, assinatura) próximo ao rótulo "CLIENTE"
-    put_at(page, "CLIENTE", f"NOME LEGÍVEL: {cli_nome_legivel}\nRG/CPF: {cli_rg}\nTelefone: {normalize_phone(cli_tel)}",
-           rel_rect=(0, 10, 300, 90), fontsize=10, align=0)
+    # --- Cliente (rodapé): Nome legível / RG / Telefone + assinatura do cliente
+    x_cli, y_cli = 70 + off_cli_x, 450 + off_cli_y
+    c.drawString(x_cli, y_cli, f"NOME LEGÍVEL: {cli_nome_legivel or ''}")
+    c.drawString(x_cli, y_cli - line, f"RG/CPF: {cli_rg or ''}")
+    c.drawString(x_cli, y_cli - 2*line, f"Telefone: {normalize_phone(cli_tel or '')}")
+
     sigcli_bytes = None
     if sig_cli_up is not None:
         sigcli_bytes = sig_cli_up.read()
     elif sig_cli_cam is not None:
         sigcli_bytes = sig_cli_cam.getvalue()
-    place_signature(page, "CLIENTE", sigcli_bytes, rel_rect=(310, 10, 560, 90))
+    if sigcli_bytes:
+        try:
+            c.drawImage(ImageReader(BytesIO(sigcli_bytes)), x_cli + 260, y_cli - 10,
+                        width=220, height=60, preserveAspectRatio=True, mask='auto')
+        except Exception:
+            pass
 
-    # --- Nº CHAMADO (rodapé/lado direito)
-    put_right_of_label(page, "Nº CHAMADO", num_chamado, dx=12)
+    # --- Nº CHAMADO (campo inferior direito aproximado)
+    x_ch, y_ch = 420 + off_chamado_x, 430 + off_chamado_y
+    c.drawString(x_ch, y_ch, str(num_chamado or ""))
 
-    # --- Senha Mam / Fornecida Por (opcionais - não coletados aqui; pode-se incluir depois)
-    # Exemplo de como preencher se quiser:
-    # put_right_of_label(page, "Senha Mam:", "XXXXXX")
-    # put_right_of_label(page, "Fornecida Por", "Fulano")
+    # Finaliza overlay
+    c.showPage()
+    c.save()
+    packet = BytesIO(packet.getvalue())
 
-    # --- Exporta
+    # Mescla overlay na página 1 do PDF base
+    overlay_pdf = PdfReader(packet)
+    base_reader = PdfReader(BytesIO(base_bytes))
+    writer = PdfWriter()
+
+    # 1ª página com overlay
+    base_page = base_reader.pages[0]
+    overlay_page = overlay_pdf.pages[0]
+    base_page.merge_page(overlay_page)
+    writer.add_page(base_page)
+
+    # Demais páginas (se existirem)
+    for i in range(1, len(base_reader.pages)):
+        writer.add_page(base_reader.pages[i])
+
     out = BytesIO()
-    doc.save(out)
-    doc.close()
+    writer.write(out)
+    return out.getvalue()
 
-    st.success("PDF gerado com sucesso!")
-    st.download_button("⬇️ Baixar RAT preenchido", data=out.getvalue(), file_name=f"RAT_MAM_preenchido_{num_chamado or 'sem_num'}.pdf", mime="application/pdf")
+# Botão principal
+if st.button("🧾 Gerar PDF preenchido", type="primary"):
+    # Tenta carregar o PDF base do disco; se não existir, pede upload
+    base_bytes = None
+    try:
+        base_bytes = load_pdf_bytes(PDF_BASE_PATH)
+    except FileNotFoundError:
+        st.warning(f"Arquivo base '{PDF_BASE_PATH}' não encontrado. Envie abaixo.")
+        base_upload = st.file_uploader("📎 Envie o arquivo base RAT MAM.pdf", type=["pdf"], key="base_pdf")
+        if base_upload is not None:
+            base_bytes = base_upload.read()
 
+    if base_bytes is None:
+        st.stop()
 
+    try:
+        pdf_out = build_overlay_pdf(base_bytes)
+        st.success("PDF gerado com sucesso!")
+        st.download_button(
+            "⬇️ Baixar RAT preenchido",
+            data=pdf_out,
+            file_name=f"RAT_MAM_preenchido_{(num_chamado or 'sem_num')}.pdf",
+            mime="application/pdf",
+        )
+    except Exception as e:
+        st.error(f"Falha ao gerar PDF: {e}")
+        st.exception(e)
 
+st.markdown("---")
+st.caption("Se alguma posição sair fora, ajuste a seção ⚙️ Calibração e me diga o deslocamento ideal para eu fixar no código.")
