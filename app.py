@@ -249,22 +249,24 @@ if submitted:
             x_rg = rg_lbl.x1 + (4 * CM)     # pedido (1 cm mais à ESQ que antes)
             y_rg = rg_lbl.y0 + rg_lbl.height/1.5 + 6
             page.insert_text((x_rg, y_rg), str(tec_rg), fontsize=10)
-
         # Nome técnico: MESMA LINHA do RG técnico, 5 cm à ESQ do RG (~ 1 cm à ESQ do rótulo)
-        if rg_lbl and tec_nome:
-            x_nome = rg_lbl.x1 - (1 * CM)   # = x do rótulo - 1 cm
-            y_nome = rg_lbl.y0 + rg_lbl.height/1.5 + 6
-            page.insert_text((x_nome, y_nome), str(tec_nome), fontsize=10)
+        # ↓ desce um pouco mais (de +6 pt para +12 pt)
+       if rg_lbl and tec_nome:
+           x_nome = rg_lbl.x1 - (1 * CM)
+           y_nome = rg_lbl.y0 + rg_lbl.height/1.5 + 12
+           page.insert_text((x_nome, y_nome), str(tec_nome), fontsize=10)
+
 
         # ===== Assinaturas (sem fundo no PDF) =====
         # Técnico: 2 cm à ESQ e 1 cm para CIMA do retângulo base
         rect_tecnico = (110 - 2*CM, 0 - 1*CM, 330 - 2*CM, 54 - 1*CM)
         insert_signature(page, ["ASSINATURA:", "Assinatura:"], sigtec_img, rect_tecnico)
 
-        # Cliente: 2 cm para CIMA do retângulo base
-        rect_cliente = (110, 12 - 2*CM, 430, 94 - 2*CM)
-        insert_signature(page, ["DATA CARIMBO / ASSINATURA", "ASSINATURA CLIENTE", "CLIENTE"],
-                         sigcli_img, rect_cliente)
+         # Cliente: sobe 3,5 cm (2 cm + 1,5 cm)
+         rect_cliente = (110, 12 - 3.5*CM, 430, 94 - 3.5*CM)
+         insert_signature(page, ["DATA CARIMBO / ASSINATURA", "ASSINATURA CLIENTE", "CLIENTE"],
+                 sigcli_img, rect_cliente)
+
 
         # ===== Nº CHAMADO — 2 cm mais à esquerda =====
         insert_right_of(page, [" Nº CHAMADO ", "Nº CHAMADO", "No CHAMADO"],
@@ -284,3 +286,4 @@ if submitted:
     except Exception as e:
         st.error(f"Falha ao gerar PDF: {e}")
         st.exception(e)
+
