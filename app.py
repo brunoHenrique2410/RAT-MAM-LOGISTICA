@@ -1,23 +1,19 @@
-# app.py — RAT MAM (âncoras automáticas + assinatura digital sem fundo via drawable-canvas)
-# - Ajustes finos de posição solicitados:
-#     Nº do chamado: mais à ESQUERDA e mais para BAIXO (dx=-10, dy=+10)
-#     Data do atendimento: 2 cm à ESQUERDA (dx=-56) e um pouco para BAIXO (dy=+4)
-#     Hora início / término / KM: levemente para BAIXO (dy=+3)
-#     Nome do técnico: descer BEM mais (dy=+25) e um pouco à ESQUERDA (dx=-10)
-#     RG do técnico: descer um pouco (dy=+6) e ~5cm à DIREITA (dx=+140) em relação ao rótulo "TÉCNICO RG:"
-# - Assinaturas: feitas na tela (canvas), RGBA com transparência preservada (sem fundo) e inseridas no PDF automaticamente
-# - Seção de "Equip/Modelo/Série" foi removida (seriais ficam no bloco de Descrição)
+# app.py — RAT MAM (âncoras + assinatura via drawable-canvas)
+# Ajustes solicitados:
+# - Nº do chamado: -2 cm à esquerda (dx = -2*CM) e mais baixo (mantido dy)
+# - Nome do técnico: ~3 cm para baixo (limite prático; 30 cm excede A4) e -1 cm à esquerda
+# - RG do técnico: +6 pt para baixo e +5 cm à direita
+# - Data do atendimento: um pouco para baixo (+6 pt) e mais à esquerda (~ -70 pt ≈ -2.5 cm)
+# - Assinaturas: quadro com fundo branco; técnico (-2 cm X, -1 cm Y), cliente (-2 cm Y)
 #
-# Requisitos (requirements.txt):
+# Requisitos:
 #   streamlit==1.37.1
 #   Pillow==10.4.0
 #   PyMuPDF>=1.24.12
 #   streamlit-drawable-canvas==0.9.3
 #   numpy==2.3.2
-#
 # runtime.txt: 3.12
 
-import base64
 from io import BytesIO
 from datetime import date, time
 
@@ -28,13 +24,13 @@ import fitz  # PyMuPDF
 from streamlit_drawable_canvas import st_canvas
 
 PDF_BASE_PATH = "RAT MAM.pdf"
-APP_TITLE = "RAT MAM – Assinatura Digital + Âncoras (canvas)"
+APP_TITLE = "RAT MAM – Assinatura Digital + Âncoras"
+CM = 28.3465  # pontos por centímetro (A4: 595x842 pt)
 
 st.set_page_config(page_title=APP_TITLE, layout="centered")
 st.title("📄 " + APP_TITLE)
-st.caption("Assine direto na tela (fundo transparente). Campos posicionados por âncoras do PDF.")
+st.caption("Assine direto no celular (fundo branco no quadro). Campos posicionados por âncoras do PDF.")
 
-# ---------------- Utils ----------------
 @st.cache_data
 def load_pdf_bytes(path: str) -> bytes:
     with open(path, "rb") as f:
@@ -49,25 +45,21 @@ def normalize_phone(s: str) -> str:
     return s
 
 def np_to_rgba_pil(arr) -> Image.Image | None:
-    """Converte image_data do drawable-canvas (numpy, RGBA) para PIL RGBA; None se vazio."""
-    if arr is None:
+    if arr is None or arr.ndim != 3 or arr.shape[2] < 4:
         return None
-    if arr.ndim != 3 or arr.shape[2] < 4:
-        return None
-    # se o usuário não desenhou nada (tudo alpha=0), retorna None
-    if np.max(arr[:, :, 3]) == 0:
+    if np.max(arr[:, :, 3]) == 0:  # nada desenhado
         return None
     return Image.fromarray(arr.astype("uint8"), mode="RGBA")
 
-# ---------------- Form (sem Equip/Modelo/Série) ----------------
+# ---------- Form ----------
 with st.form("rat_mam"):
     st.subheader("1) Chamado e Agenda")
-    col_a, col_b = st.columns(2)
-    with col_a:
+    c1, c2 = st.columns(2)
+    with c1:
         num_chamado = st.text_input("Nº do chamado")
         data_atend  = st.date_input("Data do atendimento", value=date.today())
         hora_ini    = st.time_input("Hora início", value=time(8, 0))
-    with col_b:
+    with c2:
         hora_fim    = st.time_input("Hora término", value=time(10, 0))
         distancia_km = st.text_input("Distância (KM)")
 
@@ -89,12 +81,12 @@ with st.form("rat_mam"):
     tec_nome = st.text_input("Nome do técnico")
     tec_rg   = st.text_input("RG/Documento do técnico")
 
-    st.write("**Assinatura do TÉCNICO** (desenhe no quadro abaixo)")
+    st.write("**Assinatura do TÉCNICO**")
     tec_canvas = st_canvas(
-        fill_color="rgba(0,0,0,0)",  # sem preenchimento
+        fill_color="rgba(0,0,0,0)",      # sem preenchimento (traço apenas)
         stroke_width=3,
         stroke_color="#000000",
-        background_color=None,       # fundo transparente no próprio canvas
+        background_color="#FFFFFF",      # fundo BRANCO no quadro (pedido)
         width=800,
         height=180,
         drawing_mode="freedraw",
@@ -104,12 +96,12 @@ with st.form("rat_mam"):
     )
 
     st.write("---")
-    st.write("**Assinatura do CLIENTE** (desenhe no quadro abaixo)")
+    st.write("**Assinatura do CLIENTE**")
     cli_canvas = st_canvas(
         fill_color="rgba(0,0,0,0)",
         stroke_width=3,
         stroke_color="#000000",
-        background_color=None,
+        background_color="#FFFFFF",      # fundo BRANCO
         width=800,
         height=180,
         drawing_mode="freedraw",
@@ -120,27 +112,20 @@ with st.form("rat_mam"):
 
     submitted = st.form_submit_button("🧾 Gerar PDF preenchido")
 
-# ---------------- Âncoras e escrita ----------------
+# ---------- Âncoras e helpers ----------
 def search_once(page, texts):
     if isinstance(texts, (str,)):
         texts = [texts]
     for t in texts:
-        try:
-            rects = page.search_for(t)
-        except TypeError:
-            rects = page.search_for(t)
+        rects = page.search_for(t)
         if rects:
             return rects[0]
     return None
 
 def search_all(page, text):
-    try:
-        return page.search_for(text)
-    except TypeError:
-        return page.search_for(text)
+    return page.search_for(text)
 
 def insert_right_of(page, labels, content, dx=0, dy=0, fontsize=10):
-    """Escreve à direita da âncora com ajuste fino X (dx) e Y (dy)."""
     if not content:
         return
     r = search_once(page, labels)
@@ -160,7 +145,6 @@ def insert_textbox_below(page, label, content, box=(0, 20, 540, 240), fontsize=1
     page.insert_textbox(rect, str(content), fontsize=fontsize, align=align)
 
 def place_signature_near(page, label, pil_rgba: Image.Image, rel_rect):
-    """Cola assinatura RGBA (transparente) relativa ao rótulo."""
     if pil_rgba is None:
         return
     r = search_once(page, label)
@@ -168,20 +152,19 @@ def place_signature_near(page, label, pil_rgba: Image.Image, rel_rect):
         return
     rect = fitz.Rect(r.x0 + rel_rect[0], r.y1 + rel_rect[1], r.x0 + rel_rect[2], r.y1 + rel_rect[3])
     buf = BytesIO()
-    pil_rgba.save(buf, format="PNG")  # mantém alfa
+    pil_rgba.save(buf, format="PNG")   # preserva alfa; como o fundo do quadro é branco, o PNG vai com retângulo branco (pedido)
     page.insert_image(rect, stream=buf.getvalue())
 
 def find_tecnico_rg_label_rect(page):
-    """Retorna o retângulo do label 'TÉCNICO RG:' (não confunde com RG do contato)."""
     for lbl in ["TÉCNICO RG:", "TÉCNICO  RG:", "TECNICO RG:"]:
         rect = search_once(page, [lbl])
         if rect:
             return rect
     return None
 
-# ---------------- Geração ----------------
+# ---------- Geração ----------
 if submitted:
-    # Constrói bloco de descrição (seriais + atividade + extra)
+    # Monta bloco de descrição
     partes = []
     if seriais_texto and seriais_texto.strip():
         seriais = [ln.strip() for ln in seriais_texto.splitlines() if ln.strip()]
@@ -193,7 +176,7 @@ if submitted:
         partes.append("INFORMAÇÕES ADICIONAIS:\n" + info_extra.strip())
     bloco_desc = "\n\n".join(partes) if partes else ""
 
-    # Assinaturas vindas do canvas (numpy -> PIL RGBA)
+    # Assinaturas do canvas
     sigtec_img = np_to_rgba_pil(tec_canvas.image_data if tec_canvas else None)
     sigcli_img = np_to_rgba_pil(cli_canvas.image_data if cli_canvas else None)
 
@@ -220,7 +203,7 @@ if submitted:
         insert_right_of(page, ["Cidade:", "CIDADE:"],     cidade,     dx=6, dy=1)
 
         insert_right_of(page, ["Contato:"], contato_nome, dx=6, dy=1)
-        # RG do contato: usa o rótulo 'Contato:' como referência vertical
+        # RG do contato: "descer um pouco", centralização já estava ok
         r_cont = search_once(page, ["Contato:"])
         if r_cont and contato_rg:
             rg_rects = search_all(page, "RG:")
@@ -228,13 +211,14 @@ if submitted:
                 cy = r_cont.y0 + r_cont.height/2
                 rg_best = min(rg_rects, key=lambda rr: abs((rr.y0+rr.height/2)-cy))
                 x = rg_best.x1 + 6
-                y = rg_best.y0 + rg_best.height/1.5 + 3
+                y = rg_best.y0 + rg_best.height/1.5 + 6  # desce um pouco
                 page.insert_text((x, y), str(contato_rg), fontsize=10)
         insert_right_of(page, ["Telefone:", "TELEFONE:"], normalize_phone(contato_tel), dx=6, dy=1)
 
-        # ===== Datas/Horas/KM (ajustes pedidos) =====
+        # ===== Datas/Horas/KM =====
+        # Data: mais à esquerda (~ -70 pt ≈ -2.5 cm) e um pouco abaixo (+6 pt)
         insert_right_of(page, ["Data do atendimento:", "Data do Atendimento:"],
-                        data_atend.strftime("%d/%m/%Y"), dx=-56, dy=4)  # 2 cm à ESQ e um pouco p/ BAIXO
+                        data_atend.strftime("%d/%m/%Y"), dx=-70, dy=6)
         insert_right_of(page, ["Hora Inicio:", "Hora Início:", "Hora inicio:"],
                         hora_ini.strftime("%H:%M"), dx=0, dy=3)
         insert_right_of(page, ["Hora Termino:", "Hora Término:", "Hora termino:"],
@@ -247,29 +231,46 @@ if submitted:
                              bloco_desc, box=(0, 20, 540, 240), fontsize=10, align=0)
 
         # ===== TÉCNICO =====
-        # Nome do técnico — descer BEM (dy=+25) e mais à esquerda (dx=-10)
-        insert_right_of(page, ["TÉCNICO", "TECNICO"], tec_nome, dx=-10, dy=25)
+        # Nome do técnico: MUITO mais para baixo (~3 cm ≈ 85 pt) e 1 cm à esquerda
+        # (30 cm excede 842 pt de altura da página; por isso limitei a ~3 cm para não sair do papel.
+        #  Se quiser mais, me diga um valor entre 0–10 cm que ajusto aqui.)
+        insert_right_of(page, ["TÉCNICO", "TECNICO"], tec_nome, dx=-(1*CM), dy=(3*CM))
 
-        # RG do técnico — a partir do rótulo "TÉCNICO RG:", desloca ~5 cm à direita e desce um pouco
-        rg_lbl = find_tecnico_rg_label_rect(page)
+        # RG do técnico: +5 cm para a direita e +6 pt para baixo a partir do rótulo "TÉCNICO RG:"
+        rg_lbl = None
+        for lbl in ["TÉCNICO RG:", "TÉCNICO  RG:", "TECNICO RG:"]:
+            rg_lbl = search_once(page, [lbl])
+            if rg_lbl:
+                break
         if rg_lbl and tec_rg:
-            x = rg_lbl.x1 + 140   # ~5cm à direita
+            x = rg_lbl.x1 + (5*CM)   # ~5 cm direita
             y = rg_lbl.y0 + rg_lbl.height/1.5 + 6
             page.insert_text((x, y), str(tec_rg), fontsize=10)
 
-        # ===== Assinaturas (sem fundo) =====
-        # Técnico: ancorado em "ASSINATURA:" (mesma linha), caixa mais à esquerda e um pouco para baixo
-        place_signature_near(page, ["ASSINATURA:", "Assinatura:"], sigtec_img,
-                             rel_rect=(110, 0, 330, 54))
+        # ===== Assinaturas (com quadro branco) =====
+        # Técnico: 2 cm para a ESQUERDA e 1 cm para CIMA do retângulo anterior
+        rect_tecnico = (110 - 2*CM, 0 - 1*CM, 330 - 2*CM, 54 - 1*CM)
+        if sigtec_img is not None:
+            r = search_once(page, ["ASSINATURA:", "Assinatura:"])
+            if r:
+                rect = fitz.Rect(r.x0 + rect_tecnico[0], r.y1 + rect_tecnico[1],
+                                 r.x0 + rect_tecnico[2], r.y1 + rect_tecnico[3])
+                buf = BytesIO(); sigtec_img.save(buf, format="PNG")  # terá retângulo branco, como pedido
+                page.insert_image(rect, stream=buf.getvalue())
 
-        # Cliente: "DATA CARIMBO / ASSINATURA" (rodapé), mais à esquerda e baixo
-        place_signature_near(page, ["DATA CARIMBO / ASSINATURA", "ASSINATURA CLIENTE", "CLIENTE"],
-                             sigcli_img,
-                             rel_rect=(110, 12, 430, 94))
+        # Cliente: 2 cm para CIMA do retângulo anterior do cliente
+        rect_cliente = (110, 12 - 2*CM, 430, 94 - 2*CM)
+        if sigcli_img is not None:
+            r = search_once(page, ["DATA CARIMBO / ASSINATURA", "ASSINATURA CLIENTE", "CLIENTE"])
+            if r:
+                rect = fitz.Rect(r.x0 + rect_cliente[0], r.y1 + rect_cliente[1],
+                                 r.x0 + rect_cliente[2], r.y1 + rect_cliente[3])
+                buf = BytesIO(); sigcli_img.save(buf, format="PNG")
+                page.insert_image(rect, stream=buf.getvalue())
 
-        # ===== Nº CHAMADO — mais à esquerda e para baixo =====
+        # ===== Nº CHAMADO — 2 cm mais à esquerda e um pouco mais baixo =====
         insert_right_of(page, [" Nº CHAMADO ", "Nº CHAMADO", "No CHAMADO"],
-                        num_chamado, dx=-10, dy=10)
+                        num_chamado, dx=-(2*CM), dy=10)
 
         out = BytesIO()
         doc.save(out)
