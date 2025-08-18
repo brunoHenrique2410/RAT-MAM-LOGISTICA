@@ -249,12 +249,14 @@ if submitted:
             x_rg = rg_lbl.x1 + (4 * CM)     # pedido (1 cm mais à ESQ que antes)
             y_rg = rg_lbl.y0 + rg_lbl.height/1.5 + 6
             page.insert_text((x_rg, y_rg), str(tec_rg), fontsize=10)
-        # Nome técnico: MESMA LINHA do RG técnico, 5 cm à ESQ do RG (~ 1 cm à ESQ do rótulo)
-        # ↓ desce um pouco mais (de +6 pt para +12 pt)
-       if rg_lbl and tec_nome:
-           x_nome = rg_lbl.x1 - (1 * CM)
-           y_nome = rg_lbl.y0 + rg_lbl.height/1.5 + 12
-           page.insert_text((x_nome, y_nome), str(tec_nome), fontsize=10)
+            
+         # Nome técnico: MESMA LINHA do RG técnico, 5 cm à ESQ do RG (~ 1 cm à ESQ do rótulo)
+         # ↓ desce um pouco mais (de +6 pt para +12 pt)
+         if rg_lbl and tec_nome:
+            x_nome = rg_lbl.x1 - (1 * CM)
+            y_nome = rg_lbl.y0 + rg_lbl.height/1.5 + 12
+            page.insert_text((x_nome, y_nome), str(tec_nome), fontsize=10)
+
 
 
         # ===== Assinaturas (sem fundo no PDF) =====
@@ -286,4 +288,5 @@ if submitted:
     except Exception as e:
         st.error(f"Falha ao gerar PDF: {e}")
         st.exception(e)
+
 
