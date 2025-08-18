@@ -1,4 +1,18 @@
 # app.py — RAT MAM (âncoras + drawable-canvas + assinatura sem fundo no PDF)
+# - Data do atendimento: dx=-90 (~3,2 cm à esquerda), dy=+10
+# - RG técnico: +4 cm à direita do rótulo "TÉCNICO RG:" e +6 pt p/ baixo
+# - Nome técnico: mesma linha do RG técnico, 5 cm à esquerda do RG (~1 cm à esquerda do rótulo), dy=+12
+# - Nº do chamado: -2 cm à esquerda e um pouco mais abaixo (dy=+10)
+# - Assinaturas: quadro com fundo branco para desenhar; no PDF o fundo branco é removido (transparente)
+# - Canvas com toolbar habilitada (limpar/borracha)
+#
+# requirements.txt:
+#   streamlit==1.37.1
+#   Pillow==10.4.0
+#   PyMuPDF>=1.24.12
+#   streamlit-drawable-canvas==0.9.3
+#   numpy==2.3.2
+# runtime.txt: 3.12
 
 from io import BytesIO
 from datetime import date, time
@@ -11,11 +25,11 @@ from streamlit_drawable_canvas import st_canvas
 
 PDF_BASE_PATH = "RAT MAM.pdf"
 APP_TITLE = "RAT MAM – Assinatura Digital + Âncoras"
-CM = 28.3465  # pontos por centímetro (A4: ~595x842 pt)
+CM = 28.3465  # pontos por centímetro (A4 ~595x842 pt)
 
 st.set_page_config(page_title=APP_TITLE, layout="centered")
 st.title("📄 " + APP_TITLE)
-st.caption("Assine no celular (quadro branco). No PDF o fundo da assinatura é removido (transparente). Campos por âncoras.")
+st.caption("Assine no celular (quadro branco com botão de limpar). No PDF o fundo da assinatura é removido. Campos por âncoras.")
 
 @st.cache_data
 def load_pdf_bytes(path: str) -> bytes:
@@ -31,6 +45,7 @@ def normalize_phone(s: str) -> str:
     return s
 
 def np_to_rgba_pil(arr) -> Image.Image | None:
+    """Converte image_data (numpy RGBA) do drawable-canvas para PIL RGBA; None se vazio."""
     if arr is None or arr.ndim != 3 or arr.shape[2] < 4:
         return None
     if np.max(arr[:, :, 3]) == 0:
@@ -38,8 +53,9 @@ def np_to_rgba_pil(arr) -> Image.Image | None:
     return Image.fromarray(arr.astype("uint8"), mode="RGBA")
 
 def remove_white_to_transparent(img: Image.Image, thresh: int = 245) -> Image.Image:
-    arr = np.array(img.convert("RGBA"))
-    rgb = arr[:, :, :3]
+    """Remove pixels quase brancos -> alpha=0 (fundo transparente no PDF)."""
+    arr = np.array(img.convert("RGBA"))          # (H, W, 4)
+    rgb = arr[:, :, :3]                          # (H, W, 3)
     mask_white = (rgb[:, :, 0] >= thresh) & (rgb[:, :, 1] >= thresh) & (rgb[:, :, 2] >= thresh)
     arr[mask_white, 3] = 0
     return Image.fromarray(arr, mode="RGBA")
@@ -76,15 +92,15 @@ with st.form("rat_mam"):
 
     st.write("**Assinatura do TÉCNICO**")
     tec_canvas = st_canvas(
-        fill_color="rgba(0,0,0,0)",
+        fill_color="rgba(0,0,0,0)",   # só traço
         stroke_width=3,
         stroke_color="#000000",
-        background_color="#FFFFFF",
+        background_color="#FFFFFF",   # quadro branco p/ visibilidade
         width=800, height=180,
         drawing_mode="freedraw",
         key="sig_tec_canvas",
         update_streamlit=True,
-        display_toolbar=False,
+        display_toolbar=True,         # ← habilita lixeira/borracha (limpar)
     )
 
     st.write("---")
@@ -93,12 +109,12 @@ with st.form("rat_mam"):
         fill_color="rgba(0,0,0,0)",
         stroke_width=3,
         stroke_color="#000000",
-        background_color="#FFFFFF",
+        background_color="#FFFFFF",   # quadro branco
         width=800, height=180,
         drawing_mode="freedraw",
         key="sig_cli_canvas",
         update_streamlit=True,
-        display_toolbar=False,
+        display_toolbar=True,         # ← habilita lixeira/borracha (limpar)
     )
 
     submitted = st.form_submit_button("🧾 Gerar PDF preenchido")
@@ -136,6 +152,7 @@ def insert_textbox_below(page, label, content, box=(0, 20, 540, 240), fontsize=1
     page.insert_textbox(rect, str(content), fontsize=fontsize, align=align)
 
 def insert_signature(page, label, img_rgba: Image.Image, rel_rect):
+    """Insere assinatura com fundo branco REMOVIDO (transparente) no PDF."""
     if img_rgba is None:
         return
     r = search_once(page, label)
@@ -143,8 +160,7 @@ def insert_signature(page, label, img_rgba: Image.Image, rel_rect):
         return
     rect = fitz.Rect(r.x0 + rel_rect[0], r.y1 + rel_rect[1], r.x0 + rel_rect[2], r.y1 + rel_rect[3])
     img_clean = remove_white_to_transparent(img_rgba, thresh=245)
-    buf = BytesIO()
-    img_clean.save(buf, format="PNG")
+    buf = BytesIO(); img_clean.save(buf, format="PNG")
     page.insert_image(rect, stream=buf.getvalue())
 
 def find_tecnico_rg_label_rect(page):
@@ -156,6 +172,7 @@ def find_tecnico_rg_label_rect(page):
 
 # ---------- Geração ----------
 if submitted:
+    # Descrição
     partes = []
     if seriais_texto and seriais_texto.strip():
         seriais = [ln.strip() for ln in seriais_texto.splitlines() if ln.strip()]
@@ -167,9 +184,11 @@ if submitted:
         partes.append("INFORMAÇÕES ADICIONAIS:\n" + info_extra.strip())
     bloco_desc = "\n\n".join(partes) if partes else ""
 
+    # Assinaturas do canvas
     sigtec_img = np_to_rgba_pil(tec_canvas.image_data if tec_canvas else None)
     sigcli_img = np_to_rgba_pil(cli_canvas.image_data if cli_canvas else None)
 
+    # PDF base
     base_bytes = None
     try:
         base_bytes = load_pdf_bytes(PDF_BASE_PATH)
@@ -218,28 +237,30 @@ if submitted:
         insert_textbox_below(page, ["DESCRIÇÃO DE ATENDIMENTO","DESCRICAO DE ATENDIMENTO"],
                              bloco_desc, box=(0, 20, 540, 240), fontsize=10, align=0)
 
-        # Técnico
+        # Técnico (mesma linha do RG)
         rg_lbl = find_tecnico_rg_label_rect(page)
 
+        # RG técnico: +4 cm à direita do rótulo e +6 pt p/ baixo
         if rg_lbl and tec_rg:
             x_rg = rg_lbl.x1 + (4 * CM)
             y_rg = rg_lbl.y0 + rg_lbl.height/1.5 + 6
             page.insert_text((x_rg, y_rg), str(tec_rg), fontsize=10)
 
+        # Nome técnico: 5 cm à esquerda do RG (≈ 1 cm à esquerda do rótulo), desce +12 pt
         if rg_lbl and tec_nome:
             x_nome = rg_lbl.x1 - (1 * CM)
-            y_nome = rg_lbl.y0 + rg_lbl.height/1.5 + 12  # desce mais
+            y_nome = rg_lbl.y0 + rg_lbl.height/1.5 + 12
             page.insert_text((x_nome, y_nome), str(tec_nome), fontsize=10)
 
-        # Assinaturas
-        rect_tecnico = (110 - 2*CM, 0 - 1*CM, 330 - 2*CM, 54 - 1*CM)
+        # Assinaturas (sem fundo no PDF)
+        rect_tecnico = (110 - 2*CM, 0 - 1*CM, 330 - 2*CM, 54 - 1*CM)  # técnico: 2 cm à ESQ, 1 cm acima
         insert_signature(page, ["ASSINATURA:", "Assinatura:"], sigtec_img, rect_tecnico)
 
-        rect_cliente = (110, 12 - 3.5*CM, 430, 94 - 3.5*CM)  # sobe 3.5cm
+        rect_cliente = (110, 12 - 3.5*CM, 430, 94 - 3.5*CM)           # cliente: sobe 3.5 cm
         insert_signature(page, ["DATA CARIMBO / ASSINATURA", "ASSINATURA CLIENTE", "CLIENTE"],
                          sigcli_img, rect_cliente)
 
-        # Nº CHAMADO
+        # Nº CHAMADO — 2 cm mais à esquerda
         insert_right_of(page, [" Nº CHAMADO ", "Nº CHAMADO", "No CHAMADO"],
                         num_chamado, dx=-(2*CM), dy=10)
 
