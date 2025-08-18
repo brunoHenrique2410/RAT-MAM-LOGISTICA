@@ -1,4 +1,4 @@
-# app.py — RAT MAM (âncoras automáticas + assinatura digital sem fundo + ajustes finos)
+# app.py — RAT MAM (âncoras + assinatura digital transparente + ajustes finos)
 # Requisitos:
 #   requirements.txt
 #     streamlit==1.37.1
@@ -10,18 +10,18 @@
 import base64
 from io import BytesIO
 from datetime import date, time
-from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
+from urllib.parse import urlencode
 
 import streamlit as st
 from PIL import Image
 import fitz  # PyMuPDF
 
 PDF_BASE_PATH = "RAT MAM.pdf"
-APP_TITLE = "RAT MAM – Âncoras + Assinatura Digital (sem fundo)"
+APP_TITLE = "RAT MAM – Assinatura Digital + Âncoras"
 
 st.set_page_config(page_title=APP_TITLE, layout="centered")
 st.title("📄 " + APP_TITLE)
-st.caption("Campos posicionados por âncoras do PDF. Assinaturas digitais (canvas) SEM fundo e salvas automaticamente.")
+st.caption("Campos posicionados por âncoras do PDF. Assinaturas digitais (sem fundo) e salvas automaticamente.")
 
 # ---------------- Utils ----------------
 @st.cache_data
@@ -47,78 +47,92 @@ def dataurl_to_image(data_url: str):
     raw = base64.b64decode(b64)
     return Image.open(BytesIO(raw)).convert("RGBA")
 
-# ---------------- Canvas assinatura (sem fundo) com salvamento automático ----------------
-def signature_canvas_auto(label: str, key_prefix: str, height: int = 200):
+# ---------------- Canvas com salvamento AUTO + transparência ----------------
+def signature_canvas_auto(label: str, key_prefix: str, height: int = 180):
     st.markdown(f"**{label}**")
-    # O botão "Salvar assinatura" grava a dataURL direto na querystring (?sig_tec=... / ?sig_cli=...)
+    # UX: fundo visual branco para enxergar; ao salvar converto branco -> transparente
     html = f"""
     <div style="border:1px solid #ccc;border-radius:8px;padding:6px;">
-      <canvas id="sigCanvas_{key_prefix}" width="900" height="{height}" style="width:100%;touch-action:none;background:transparent;"></canvas>
+      <canvas id="sig_{key_prefix}" width="800" height="{height}"
+              style="width:100%;touch-action:none;background:#fff;border-radius:6px;"></canvas>
       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
-        <button id="clearBtn_{key_prefix}" type="button" style="flex:1;min-width:120px;padding:10px;">Limpar</button>
-        <button id="saveBtn_{key_prefix}" type="button" style="flex:1;min-width:160px;padding:10px;">Salvar assinatura</button>
+        <button id="clear_{key_prefix}" type="button" style="flex:1;min-width:120px;padding:10px;">Limpar</button>
+        <button id="save_{key_prefix}"  type="button" style="flex:2;min-width:160px;padding:10px;">Salvar assinatura</button>
       </div>
     </div>
     <script>
-      const canvas = document.getElementById('sigCanvas_{key_prefix}');
-      const ctx = canvas.getContext('2d');
-      let drawing = false;
+      const cv = document.getElementById('sig_{key_prefix}');
+      const ctx = cv.getContext('2d');
+      // pinta fundo branco para visibilidade
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0,0,cv.width,cv.height);
 
+      let drawing = false;
       function getPos(e) {{
-        const r = canvas.getBoundingClientRect();
-        const sx = canvas.width / r.width;
-        const sy = canvas.height / r.height;
+        const r = cv.getBoundingClientRect();
+        const sx = cv.width / r.width, sy = cv.height / r.height;
         if (e.touches && e.touches[0]) {{
-          return {{ x: (e.touches[0].clientX - r.left) * sx, y: (e.touches[0].clientY - r.top) * sy }};
+          return {{ x:(e.touches[0].clientX - r.left)*sx, y:(e.touches[0].clientY - r.top)*sy }};
         }} else {{
-          return {{ x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy }};
+          return {{ x:(e.clientX - r.left)*sx, y:(e.clientY - r.top)*sy }};
         }}
       }}
-      function start(e) {{ drawing = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }}
+      function start(e) {{ drawing=true; const p=getPos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); }}
       function move(e) {{
-        if (!drawing) return;
-        const p = getPos(e);
-        ctx.lineTo(p.x, p.y);
-        ctx.lineWidth = 3;
-        ctx.lineCap = 'round';
-        ctx.strokeStyle = '#000000'; // traço preto
+        if(!drawing) return;
+        const p=getPos(e);
+        ctx.lineTo(p.x,p.y);
+        ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.strokeStyle = '#000';
         ctx.stroke();
       }}
-      function end(e) {{ drawing = false; }}
+      function end(e) {{ drawing=false; }}
 
-      canvas.addEventListener('mousedown', start);
-      canvas.addEventListener('mousemove', move);
-      canvas.addEventListener('mouseup', end);
-      canvas.addEventListener('mouseleave', end);
-      canvas.addEventListener('touchstart', (e) => {{ e.preventDefault(); start(e); }}, {{passive:false}});
-      canvas.addEventListener('touchmove',  (e) => {{ e.preventDefault(); move(e); }}, {{passive:false}});
-      canvas.addEventListener('touchend',   (e) => {{ e.preventDefault(); end(e); }}, {{passive:false}});
+      cv.addEventListener('mousedown', start);
+      cv.addEventListener('mousemove', move);
+      cv.addEventListener('mouseup',   end);
+      cv.addEventListener('mouseleave',end);
+      cv.addEventListener('touchstart',(e)=>{{e.preventDefault();start(e)}},{{passive:false}});
+      cv.addEventListener('touchmove', (e)=>{{e.preventDefault();move(e)}}, {{passive:false}});
+      cv.addEventListener('touchend',  (e)=>{{e.preventDefault();end(e)}},  {{passive:false}});
 
-      document.getElementById('clearBtn_{key_prefix}').onclick = () => {{
-        // limpa mantendo transparência
-        ctx.clearRect(0,0,canvas.width,canvas.height);
+      document.getElementById('clear_{key_prefix}').onclick = () => {{
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,cv.width,cv.height);
       }};
 
-      function getPNG() {{
-        return canvas.toDataURL('image/png'); // mantém transparência
+      function toTransparentPNG() {{
+        // cria canvas RGBA transparente e converte branco (~fundo) para alpha=0
+        const off = document.createElement('canvas');
+        off.width = cv.width; off.height = cv.height;
+        const octx = off.getContext('2d');
+        octx.drawImage(cv,0,0);
+        const img = octx.getImageData(0,0,off.width,off.height);
+        const d = img.data;
+        for (let i=0;i<d.length;i+=4) {{
+          const r=d[i], g=d[i+1], b=d[i+2];
+          // limiar de "quase branco"
+          if (r>240 && g>240 && b>240) {{
+            d[i+3]=0; // transparente
+          }}
+        }}
+        octx.putImageData(img,0,0);
+        return off.toDataURL('image/png');
       }}
 
-      document.getElementById('saveBtn_{key_prefix}').onclick = () => {{
-        const png = getPNG();
-        // Atualiza querystring para o Streamlit ler automaticamente
+      document.getElementById('save_{key_prefix}').onclick = () => {{
         try {{
+          const png = toTransparentPNG(); // já vem com fundo removido
           const url = new URL(window.location.href);
           url.searchParams.set('{ 'sig_tec' if key_prefix=='tec' else 'sig_cli' }', png);
-          window.location.href = url.toString();
+          window.location.replace(url.toString()); // evita criar novo histórico
         }} catch(e) {{
-          alert('Não foi possível salvar automaticamente. Tente novamente.');
+          alert('Não consegui salvar automaticamente. Tente novamente.');
         }}
       }};
     </script>
     """
-    st.components.v1.html(html, height=height + 100)
+    st.components.v1.html(html, height=height + 110)
 
-# ---------------- Form (sem seção Equip/Modelo/Série) ----------------
+# ---------------- Form (sem Equip/Modelo/Série) ----------------
 with st.form("rat_mam"):
     st.subheader("1) Chamado e Agenda")
     col_a, col_b = st.columns(2)
@@ -173,16 +187,15 @@ def search_all(page, text):
     except TypeError:
         return page.search_for(text)
 
-def insert_right_of(page, labels, content, dx=8, dy=0, fontsize=10):
-    """Escreve à direita da âncora com pequenos ajustes de X/Y."""
+def insert_right_of(page, labels, content, dx=6, dy=1, fontsize=10):
+    """Escreve à direita da âncora com ajuste fino X/Y (negativo p/ esquerda, positivo p/ baixo)."""
     if not content:
         return
     r = search_once(page, labels)
     if not r:
         return
-    # Ajustes finos solicitados: mover mais à ESQUERDA (dx menor) e mais PARA BAIXO (dy positivo)
-    x = (r.x1 + dx)
-    y = (r.y0 + r.height/1.5 + dy)
+    x = r.x1 + dx
+    y = r.y0 + r.height/1.5 + dy
     page.insert_text((x, y), str(content), fontsize=fontsize)
 
 def insert_textbox_below(page, label, content, box=(0, 20, 540, 240), fontsize=10, align=0):
@@ -205,27 +218,15 @@ def place_signature_near(page, label, pil_rgba, rel_rect):
     pil_rgba.save(buf, format="PNG")  # mantém transparência
     page.insert_image(rect, stream=buf.getvalue())
 
-def find_tecnico_rg_rect(page):
-    """Encontra o 'RG:' que está na MESMA LINHA do rótulo TÉCNICO (evita RG do contato)."""
-    r_tec = search_once(page, ["TÉCNICO", "TECNICO"])
-    if not r_tec:
-        return None
-    rg_rects = search_all(page, "RG:")
-    if not rg_rects:
-        return None
-    # escolhe o RG: cujo centro-Y esteja mais próximo do centro-Y do 'TÉCNICO'
-    target_y = r_tec.y0 + r_tec.height/2
-    best = None
-    best_dy = 1e9
-    for rr in rg_rects:
-        cy = rr.y0 + rr.height/2
-        dy = abs(cy - target_y)
-        if dy < best_dy:
-            best = rr
-            best_dy = dy
-    return best
+def find_tecnico_rg_label_rect(page):
+    """Encontra especificamente o label 'TÉCNICO RG:' (evita pegar o RG do contato)."""
+    for lbl in ["TÉCNICO RG:", "TÉCNICO  RG:", "TECNICO RG:"]:
+        rect = search_once(page, [lbl])
+        if rect:
+            return rect
+    return None
 
-# ---------------- Pega assinaturas da querystring (auto) ----------------
+# ---------------- Pega assinaturas da URL (auto) ----------------
 params = st.experimental_get_query_params()
 sig_tec_data = params.get("sig_tec", [None])[0]
 sig_cli_data = params.get("sig_cli", [None])[0]
@@ -234,7 +235,7 @@ sigcli_img = dataurl_to_image(sig_cli_data) if sig_cli_data else None
 
 # ---------------- Geração ----------------
 if submitted:
-    # Monta a descrição com seriais, atividade e info extra
+    # Descrição (seriais + atividade + extra)
     partes = []
     if seriais_texto and seriais_texto.strip():
         seriais = [ln.strip() for ln in seriais_texto.splitlines() if ln.strip()]
@@ -246,7 +247,7 @@ if submitted:
         partes.append("INFORMAÇÕES ADICIONAIS:\n" + info_extra.strip())
     bloco_desc = "\n\n".join(partes) if partes else ""
 
-    # Carrega PDF base
+    # PDF base
     base_bytes = None
     try:
         base_bytes = load_pdf_bytes(PDF_BASE_PATH)
@@ -262,55 +263,57 @@ if submitted:
         doc = fitz.open(stream=base_bytes, filetype="pdf")
         page = doc[0]
 
-        # ===== TOPO: Cliente / Endereço / Bairro / Cidade / Contato / RG / Telefone =====
+        # ===== TOPO (posições finas) =====
         insert_right_of(page, ["Cliente:", "CLIENTE:"], cliente_nome, dx=6, dy=1)
         insert_right_of(page, ["Endereço:", "ENDEREÇO:"], endereco, dx=6, dy=1)
-        insert_right_of(page, ["Bairro:", "BAIRRO:"], bairro, dx=6, dy=1)
-        insert_right_of(page, ["Cidade:", "CIDADE:"], cidade, dx=6, dy=1)
+        insert_right_of(page, ["Bairro:", "BAIRRO:"],     bairro,     dx=6, dy=1)
+        insert_right_of(page, ["Cidade:", "CIDADE:"],     cidade,     dx=6, dy=1)
 
         insert_right_of(page, ["Contato:"], contato_nome, dx=6, dy=1)
-        # RG do contato = o RG: mais próximo do label "Contato:" (em Y)
+        # RG do contato: usa o rótulo 'Contato:' como referência vertical
         r_cont = search_once(page, ["Contato:"])
-        contact_rg_rects = search_all(page, "RG:")
-        if r_cont and contact_rg_rects:
-            cy = r_cont.y0 + r_cont.height/2
-            rg_best = min(contact_rg_rects, key=lambda rr: abs((rr.y0+rr.height/2)-cy))
-            # Escrever à direita deste RG:
-            if contato_rg:
-                x = rg_best.x1 + 6; y = rg_best.y0 + rg_best.height/1.5 + 1
+        if r_cont and contato_rg:
+            # acha todos "RG:" e usa o que está mais perto em Y do 'Contato:'
+            rg_rects = search_all(page, "RG:")
+            if rg_rects:
+                cy = r_cont.y0 + r_cont.height/2
+                rg_best = min(rg_rects, key=lambda rr: abs((rr.y0+rr.height/2)-cy))
+                x = rg_best.x1 + 6
+                y = rg_best.y0 + rg_best.height/1.5 + 3   # ↓ desce um pouco
                 page.insert_text((x, y), str(contato_rg), fontsize=10)
+
         insert_right_of(page, ["Telefone:", "TELEFONE:"], normalize_phone(contato_tel), dx=6, dy=1)
 
-        # ===== Datas/horas/km — mover um pouco p/ ESQUERDA e p/ BAIXO =====
-        insert_right_of(page, ["Data do atendimento:", "Data do Atendimento:"], data_atend.strftime("%d/%m/%Y"), dx=4, dy=2)
-        insert_right_of(page, ["Hora Inicio:", "Hora Início:", "Hora inicio:"], hora_ini.strftime("%H:%M"), dx=2, dy=2)
-        insert_right_of(page, ["Hora Termino:", "Hora Término:", "Hora termino:"], hora_fim.strftime("%H:%M"), dx=2, dy=2)
-        insert_right_of(page, ["Distancia (KM)", "Distância (KM)"], str(distancia_km), dx=2, dy=2)
+        # ===== Datas/Horas/KM — mais à ESQUERDA e BAIXO (como solicitado) =====
+        insert_right_of(page, ["Data do atendimento:", "Data do Atendimento:"], data_atend.strftime("%d/%m/%Y"), dx=2, dy=3)
+        insert_right_of(page, ["Hora Inicio:", "Hora Início:", "Hora inicio:"], hora_ini.strftime("%H:%M"), dx=0, dy=3)
+        insert_right_of(page, ["Hora Termino:", "Hora Término:", "Hora termino:"], hora_fim.strftime("%H:%M"), dx=0, dy=3)
+        insert_right_of(page, ["Distancia (KM) :", "Distância (KM) :"], str(distancia_km), dx=0, dy=3)
 
         # ===== DESCRIÇÃO =====
         insert_textbox_below(page, ["DESCRIÇÃO DE ATENDIMENTO","DESCRICAO DE ATENDIMENTO"], bloco_desc,
                              box=(0, 20, 540, 240), fontsize=10, align=0)
 
-        # ===== TÉCNICO (nome + RG da MESMA LINHA) =====
-        insert_right_of(page, ["TÉCNICO", "TECNICO"], tec_nome, dx=8, dy=0)
-        rg_tec_rect = find_tecnico_rg_rect(page)
-        if rg_tec_rect and tec_rg:
-            x = rg_tec_rect.x1 + 6
-            y = rg_tec_rect.y0 + rg_tec_rect.height/1.5 + 0
+        # ===== TÉCNICO (nome + RG) =====
+        insert_right_of(page, ["TÉCNICO", "TECNICO"], tec_nome, dx=8, dy=0)  # nome do técnico
+        rg_lbl = find_tecnico_rg_label_rect(page)  # rótulo "TÉCNICO RG:"
+        if rg_lbl and tec_rg:
+            x = rg_lbl.x1 + 6
+            y = rg_lbl.y0 + rg_lbl.height/1.5 + 1
             page.insert_text((x, y), str(tec_rg), fontsize=10)
 
-        # ===== Assinaturas =====
-        # Técnico: ancorar em "ASSINATURA:" dessa linha, caixa mais à ESQUERDA e um pouco mais BAIXA
+        # ===== Assinaturas (retângulos revistos) =====
+        # Técnico: âncora "ASSINATURA:" (na mesma linha do técnico)
         place_signature_near(page, ["ASSINATURA:", "Assinatura:"], sigtec_img,
-                             rel_rect=(120, 0, 320, 52))
+                             rel_rect=(110, 0, 330, 54))  # mais à esquerda e um pouco mais baixo
 
-        # Cliente: ancorar em "DATA CARIMBO / ASSINATURA", caixa mais à ESQUERDA e BAIXA
+        # Cliente: âncora "DATA CARIMBO / ASSINATURA"
         place_signature_near(page, ["DATA CARIMBO / ASSINATURA", "ASSINATURA CLIENTE", "CLIENTE"],
                              sigcli_img,
-                             rel_rect=(120, 12, 420, 92))
+                             rel_rect=(110, 12, 430, 94)) # mais à esquerda e baixo
 
-        # ===== Nº CHAMADO — também estava um pouco à direita/alto =====
-        insert_right_of(page, [" Nº CHAMADO ", "Nº CHAMADO", "No CHAMADO"], num_chamado, dx=4, dy=2)
+        # ===== Nº CHAMADO — “literalmente embaixo do campo” (mais à esquerda e para baixo) =====
+        insert_right_of(page, [" Nº CHAMADO ", "Nº CHAMADO", "No CHAMADO"], num_chamado, dx=-4, dy=6)
 
         out = BytesIO()
         doc.save(out)
