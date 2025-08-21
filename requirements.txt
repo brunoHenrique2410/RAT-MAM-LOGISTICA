@@ -3,3 +3,9 @@ Pillow==10.4.0
 PyMuPDF>=1.24.12
 streamlit-drawable-canvas==0.9.3
 numpy==2.3.2
+
+# Scanner (opcionais; o app funciona mesmo sem todos)
+pytesseract
+pyzbar
+zxing-cpp
+opencv-python-headless
