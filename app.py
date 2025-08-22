@@ -136,9 +136,9 @@ def load_pdf_bytes(path: str) -> bytes:
 # --- assinatura: canvas -> JPEG RGB (fundo branco) ---
 def signature_from_canvas_as_jpeg(arr: np.ndarray, jpeg_quality: int = 92) -> Optional[bytes]:
     """
-    Converte o RGBA do canvas em RGB **com fundo branco**,
-    pintando de preto **somente** onde há traço (não-branco).
-    Corrige o caso em que o canvas vem com alpha=255 em toda área.
+    Converte o RGBA do canvas em RGB com fundo branco sólido.
+    Mantém apenas os traços (pixels não-brancos) em preto.
+    Isso elimina totalmente o fundo preto ou transparente no PDF.
     """
     if arr is None or arr.ndim != 3 or arr.shape[2] < 4:
         return None
@@ -146,16 +146,17 @@ def signature_from_canvas_as_jpeg(arr: np.ndarray, jpeg_quality: int = 92) -> Op
     rgba = arr.astype("uint8")
     R, G, B, A = rgba[:, :, 0], rgba[:, :, 1], rgba[:, :, 2], rgba[:, :, 3]
 
-    # “Quase branco” (tolerância alta porque o canvas usa branco puro)
+    # Define o que é “quase branco” (pode ajustar tolerância se quiser)
     near_white = (R > 245) & (G > 245) & (B > 245)
 
-    # Alguns navegadores/canvas preenchem A=255 no quadro inteiro.
-    # Traço = não-branco E (algum alpha). Assim evita pintar o retângulo todo.
-    stroke_mask = (~near_white) & (A > 0)
+    # Traço = pixel não-branco (mesmo que alpha seja 255 no quadro todo)
+    stroke_mask = ~near_white
 
     # Fundo branco RGB
     out = np.full((rgba.shape[0], rgba.shape[1], 3), 255, dtype=np.uint8)
-    out[stroke_mask] = [0, 0, 0]  # traço preto
+
+    # Onde houve traço, pinta de preto
+    out[stroke_mask] = [0, 0, 0]
 
     img = Image.fromarray(out, "RGB")
     buf = BytesIO()
@@ -569,4 +570,5 @@ if st.button("🧾 Gerar PDF preenchido"):
     except Exception as e:
         st.error(f"Falha ao gerar PDF: {e}")
         st.exception(e)
+
 
