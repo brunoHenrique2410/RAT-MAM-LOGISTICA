@@ -1,9 +1,8 @@
-# app.py — RAT MAM (câmera + OCR obrigatório + âncora S/N + edição + fotos no PDF)
-
+# app.py — RAT MAM (OCR obrigatório + âncora S/N + edição + preview robusto + fotos no PDF)
 from io import BytesIO
 from datetime import date, time
-from typing import List, Dict, Optional, Tuple
-import os, re
+from typing import List, Dict, Optional, Tuple, Any
+import os, re, base64
 
 import streamlit as st
 from PIL import Image, ImageOps, ImageFilter
@@ -35,19 +34,16 @@ CM = 28.3465  # pontos por cm
 
 st.set_page_config(page_title=APP_TITLE, layout="centered")
 st.title("📄 " + APP_TITLE)
-st.caption("Scanner prioriza S/N (âncora 'S/N'). OCR é obrigatório; fotos com S/N podem ser anexadas ao final do PDF.")
-
+st.caption("Scanner prioriza S/N (âncora 'S/N'), edição dos resultados e anexos de fotos ao PDF. OCR obrigatório.")
 
 # ---------- Verificação do Tesseract (OCR obrigatório) ----------
 def ensure_tesseract_available():
     if pytesseract is None:
         st.error("`pytesseract` não está instalado. Adicione `pytesseract` ao requirements e reinicie.")
         st.stop()
-    # Permite definir o binário via variável de ambiente
     tess_cmd_env = os.environ.get("TESSERACT_CMD")
     if tess_cmd_env:
         pytesseract.pytesseract.tesseract_cmd = tess_cmd_env
-    # Testa execução
     try:
         _ = pytesseract.get_tesseract_version()
     except Exception:
@@ -55,12 +51,11 @@ def ensure_tesseract_available():
             "Tesseract OCR não encontrado no sistema.\n\n"
             "Instale o binário do Tesseract:\n"
             "• Ubuntu/Debian: `sudo apt-get update && sudo apt-get install -y tesseract-ocr`\n"
-            "• Windows: instale o pacote Tesseract (UB Mannheim) e defina TESSERACT_CMD se necessário."
+            "• Windows: instale o Tesseract (UB Mannheim) e defina TESSERACT_CMD se necessário."
         )
         st.stop()
 
 ensure_tesseract_available()
-
 
 # -------------------- ESTADO --------------------
 if "scanned_items" not in st.session_state:
@@ -71,7 +66,6 @@ if "seriais_texto" not in st.session_state:
     st.session_state.seriais_texto = ""
 if "anexar_fotos" not in st.session_state:
     st.session_state.anexar_fotos = True
-
 
 # -------------------- REGEX / UTILS --------------------
 REGEX_SN_ANC = re.compile(r'\bS/?N\b[:\-]?', re.I)
@@ -128,6 +122,31 @@ def remove_white_to_transparent(img: Image.Image, thresh=245) -> Image.Image:
 def load_pdf_bytes(path: str) -> bytes:
     with open(path, "rb") as f: return f.read()
 
+# ------------- Helpers robustos para preview/sanitização de imagem -------------
+def _to_pil_or_none(obj: Any) -> Optional[Image.Image]:
+    """Tenta converter bytes/bytearray/base64 str/PIL em PIL.Image. Retorna None se não der."""
+    try:
+        if isinstance(obj, Image.Image):
+            return obj
+        if isinstance(obj, (bytes, bytearray)):
+            return Image.open(BytesIO(obj)).convert("RGB")
+        if isinstance(obj, str):
+            try:
+                raw = base64.b64decode(obj, validate=True)
+                return Image.open(BytesIO(raw)).convert("RGB")
+            except Exception:
+                return None
+    except Exception:
+        return None
+    return None
+
+def _save_pil_to_jpeg_bytes(pil: Image.Image) -> Optional[bytes]:
+    try:
+        buf = BytesIO()
+        pil.convert("RGB").save(buf, format="JPEG", quality=92)
+        return buf.getvalue()
+    except Exception:
+        return None
 
 # -------------------- OCR helpers --------------------
 def ocr_text(pil: Image.Image) -> str:
@@ -218,7 +237,6 @@ def detect_model(text_upper: str) -> Optional[str]:
             return name
     return None
 
-
 # -------------------- scanner principal --------------------
 def scan_one_image(pil: Image.Image, fonte: str) -> Dict:
     text = ocr_text(pil)
@@ -246,8 +264,11 @@ def scan_one_image(pil: Image.Image, fonte: str) -> Dict:
     mac = macs[0] if macs else ""
 
     if is_valid_sn(modelo, sn):
-        buf = BytesIO(); pil.save(buf, format="PNG")
-        st.session_state.photos_to_append.append(buf.getvalue())
+        jpeg_bytes = _save_pil_to_jpeg_bytes(pil)
+        if jpeg_bytes:
+            st.session_state.photos_to_append.append(jpeg_bytes)
+        else:
+            st.warning("Não consegui salvar a foto capturada para anexar (conversão JPEG falhou).")
 
     return {"modelo": (modelo or ""), "sn": (sn or ""), "mac": (mac or ""), "fonte": fonte}
 
@@ -272,7 +293,6 @@ def push_to_textarea_from_items():
         if ln not in seen2:
             all_lines.append(ln); seen2.add(ln)
     st.session_state.seriais_texto = "\n".join(all_lines)
-
 
 # -------------------- FORM (com submit dentro!) --------------------
 with st.form("topo"):
@@ -318,8 +338,7 @@ with st.form("topo"):
         st.success("PDF analisado.")
 
     st.markdown("---")
-    add_btn = st.form_submit_button("➕ Jogar os S/N para o campo de seriais")  # << dentro do form (OK)
-
+    add_btn = st.form_submit_button("➕ Jogar os S/N para o campo de seriais")  # << dentro do form
 
 # -------------------- ITENS EDITÁVEIS / FOTOS --------------------
 st.subheader("Itens scaneados (edite se necessário)")
@@ -350,14 +369,7 @@ if st.session_state.scanned_items:
     with cc3:
         st.session_state.anexar_fotos = st.checkbox("Anexar fotos com S/N ao PDF", value=st.session_state.anexar_fotos)
 
-if st.session_state.photos_to_append:
-    st.write("**Pré‑visualização das fotos que irão para o PDF:**")
-    cols = st.columns(3)
-    for i, b in enumerate(st.session_state.photos_to_append):
-        with cols[i % 3]:
-            st.image(b, caption=f"Foto {i+1}", use_container_width=True)
-
-# Campo de seriais (textarea)
+# Campo de seriais (textarea) – depois do submit do form
 if add_btn:
     push_to_textarea_from_items()
 st.session_state.seriais_texto = st.text_area(
@@ -366,6 +378,32 @@ st.session_state.seriais_texto = st.text_area(
     height=200,
     key="seriais_texto_area"
 )
+
+# --------- PRÉ‑VISUALIZAÇÃO das fotos (sanitizada) ----------
+if st.session_state.photos_to_append:
+    clean_list: List[bytes] = []
+    preview_imgs: List[Image.Image] = []
+    for idx, obj in enumerate(st.session_state.photos_to_append):
+        pil_img = _to_pil_or_none(obj)
+        if pil_img is not None:
+            preview_imgs.append(pil_img)
+            jpg = _save_pil_to_jpeg_bytes(pil_img)
+            if jpg:
+                clean_list.append(jpg)
+            else:
+                st.warning(f"Não consegui preparar a foto {idx+1} para anexar (JPEG).")
+        else:
+            st.warning(f"Uma foto na posição {idx+1} não pôde ser lida e será ignorada.")
+    st.session_state.photos_to_append = clean_list
+
+    if preview_imgs:
+        st.write("**Pré‑visualização das fotos que irão para o PDF:**")
+        cols = st.columns(3)
+        for i, pil_img in enumerate(preview_imgs):
+            with cols[i % 3]:
+                st.image(pil_img, caption=f"Foto {i+1}", use_container_width=True)
+    else:
+        st.info("Nenhuma foto válida para pré‑visualização no momento.")
 
 # Assinaturas, técnico e descrição
 st.subheader("Técnico e Assinaturas")
@@ -390,7 +428,6 @@ cli_canvas = st_canvas(
 st.subheader("Descrição de Atendimento")
 st.text_area("Atividade (texto do técnico)", height=80, key="atividade_txt")
 st.text_area("Informações adicionais (opcional)", height=60, key="info_txt")
-
 
 # -------------------- Helpers PDF --------------------
 def search_once(page, texts):
@@ -438,7 +475,6 @@ def insert_descricao_autofit(page, label, text):
     rect = fitz.Rect(r.x0, r.y1 + 20, r.x0 + 540, r.y1 + 20 + height)
     page.insert_textbox(rect, text, fontsize=fontsize, align=0)
 
-
 # -------------------- Geração do PDF --------------------
 if st.button("🧾 Gerar PDF preenchido"):
     try:
@@ -482,8 +518,10 @@ if st.button("🧾 Gerar PDF preenchido"):
         insert_descricao_autofit(page, ["DESCRIÇÃO DE ATENDIMENTO","DESCRICAO DE ATENDIMENTO"], bloco)
 
         # assinaturas
-        sigtec = np_to_rgba_pil(st.session_state.get("sig_tec").image_data if st.session_state.get("sig_tec") else None)
-        sigcli = np_to_rgba_pil(st.session_state.get("sig_cli").image_data if st.session_state.get("sig_cli") else None)
+        sig_tec_state = st.session_state.get("sig_tec")
+        sig_cli_state = st.session_state.get("sig_cli")
+        sigtec = np_to_rgba_pil(sig_tec_state.image_data) if sig_tec_state is not None else None
+        sigcli = np_to_rgba_pil(sig_cli_state.image_data) if sig_cli_state is not None else None
         insert_signature(page, ["ASSINATURA:", "Assinatura:"], sigtec, (110 - 2*CM, 0 - 1*CM, 330 - 2*CM, 54 - 1*CM))
         insert_signature(page, ["DATA CARIMBO / ASSINATURA", "ASSINATURA CLIENTE", "CLIENTE"], sigcli, (110, 12 - 3.5*CM, 430, 94 - 3.5*CM))
 
