@@ -1,26 +1,19 @@
-# app.py — RAT MAM (página única)
-# Ordem da UI:
-#  1) Dados do RAT
-#  2) Seriais & Descrição (com Scanner embutido)
-#  3) Assinaturas (técnico e cliente) — inseridas no PDF como JPEG com fundo branco
+# app.py — RAT MAM (página única, ordem solicitada)
+# 1) Dados do RAT
+# 2) Seriais & Descrição (com Scanner)
+# 3) Assinaturas (SEM fundo preto: JPEG com fundo branco)
 #
-# Requisitos (exemplo de requirements.txt):
-#   streamlit==1.37.1
-#   Pillow==10.4.0
-#   PyMuPDF>=1.24.12
-#   pytesseract>=0.3.10
-#   streamlit-drawable-canvas==0.9.3
-#   # opcionais (se quiser tentar código de barras além do OCR):
-#   # pyzbar
-#   # zxing-cpp
-#
-# IMPORTANTE: tesseract-ocr precisa estar instalado no sistema (binário).
-#   Ubuntu/Debian: sudo apt-get update && sudo apt-get install -y tesseract-ocr
-#   Windows: instale o Tesseract (UB Mannheim) e defina TESSERACT_CMD se necessário.
+# Requisitos:
+#   streamlit
+#   pillow
+#   pytesseract  + binário tesseract-ocr no sistema
+#   PyMuPDF (fitz)
+#   streamlit-drawable-canvas
+#   (opcionais p/ códigos de barras) pyzbar, zxing-cpp
 
 from io import BytesIO
 from datetime import date, time
-from typing import Optional, Tuple, Dict, List
+from typing import Optional, Tuple, Dict
 import os, re, hashlib
 
 import streamlit as st
@@ -28,15 +21,13 @@ from PIL import Image, ImageOps, ImageFilter
 import numpy as np
 import fitz  # PyMuPDF
 
-# ---- dependências obrigatórias/opcionais ----
+# --- dependências obrigatórias/opcionais ---
 try:
     import pytesseract
 except Exception:
     pytesseract = None
 
 try:
-    from streamlit_drawable_cavas import st_canvas  # (typo proposital? não!)
-    # corrigindo import correto:
     from streamlit_drawable_canvas import st_canvas
     CANVAS_AVAILABLE = True
 except Exception:
@@ -53,17 +44,16 @@ try:
 except Exception:
     zxingcpp = None
 
-
-# ---- config ----
+# --- config ---
 PDF_BASE_PATH = "RAT MAM.pdf"
-APP_TITLE = "RAT MAM – Fechamento Automático"
-CM = 28.3465  # pontos por centímetro (A4 ~595x842 pt)
+APP_TITLE = "RAT MAM – Fechamento (Dados • Seriais • Assinaturas)"
+CM = 28.3465  # pontos por cm
 
 st.set_page_config(page_title=APP_TITLE, layout="centered")
 st.title("📄 " + APP_TITLE)
-st.caption("Ordem: 1) Dados  •  2) Seriais & Descrição (com Scanner)  •  3) Assinaturas. Assinatura no PDF com FUNDO BRANCO (JPEG).")
+st.caption("Ordem: 1) Dados  2) Seriais & Descrição (com Scanner)  3) Assinaturas. Assinatura no PDF com FUNDO BRANCO (JPEG).")
 
-# ---- checagens ----
+# --- checagens ---
 def ensure_tesseract():
     if pytesseract is None:
         st.error("Instale `pytesseract` no requirements.")
@@ -74,7 +64,7 @@ def ensure_tesseract():
         _ = pytesseract.get_tesseract_version()
     except Exception:
         st.error(
-            "Tesseract OCR não encontrado no sistema.\n"
+            "Tesseract não encontrado.\n"
             "Ubuntu/Debian: sudo apt-get update && sudo apt-get install -y tesseract-ocr\n"
             "Windows: instale o Tesseract (UB Mannheim) e defina TESSERACT_CMD se necessário."
         )
@@ -85,8 +75,7 @@ if not CANVAS_AVAILABLE:
     st.error("Instale `streamlit-drawable-canvas` no requirements.")
     st.stop()
 
-
-# ---- estado ----
+# --- estado ---
 ss = st.session_state
 def _def(k, v):
     if k not in ss: ss[k] = v
@@ -113,8 +102,7 @@ _def("anexar_fotos", True)
 _def("sig_tec_jpg", None)       # bytes JPEG (RGB branco)
 _def("sig_cli_jpg", None)       # bytes JPEG (RGB branco)
 
-
-# ---- regex/utils ----
+# --- regex/util ---
 REGEX_SN_ANC        = re.compile(r'\bS/?N\b[:\-]?', re.I)
 REGEX_SN_FROM_TEXT  = re.compile(r'\bS/?N[:\s\-]*([A-Z0-9\-]{6,})', re.I)
 REGEX_MAC           = re.compile(r'(?:[0-9A-F]{2}[:-]){5}[0-9A-F]{2}', re.I)
@@ -149,24 +137,23 @@ def normalize_phone(s: str) -> str:
     if len(d)==10: return f"({d[:2]}) {d[2:6]}-{d[6:]}"
     return s or ""
 
-
 @st.cache_data
 def load_pdf_bytes(path: str) -> bytes:
     with open(path, "rb") as f: return f.read()
 
-
-# ---- assinatura: canvas → JPEG RGB (fundo branco) ----
+# --- assinatura: canvas -> JPEG RGB (fundo branco) ---
 def signature_from_canvas_as_jpeg(arr: np.ndarray, jpeg_quality: int = 92) -> Optional[bytes]:
     """
-    Transforma o RGBA do canvas em RGB com FUNDO BRANCO e exporta como JPEG.
-    Zero transparência → nenhum viewer mostrará preto.
+    Converte o canvas RGBA em imagem RGB com FUNDO BRANCO (sem alpha) e exporta como JPEG.
+    Isso elimina de vez o “fundo preto” em qualquer viewer de PDF.
     """
     if arr is None or arr.ndim != 3 or arr.shape[2] < 4:
         return None
     rgba = arr.astype("uint8")
-    mask = (rgba[:, :, 3] > 0)
+    mask = (rgba[:, :, 3] > 0)  # onde foi desenhado
 
-    out = np.full((rgba.shape[0], rgba.shape[1], 3), 255, dtype=np.uint8)  # fundo branco
+    # Fundo branco RGB
+    out = np.full((rgba.shape[0], rgba.shape[1], 3), 255, dtype=np.uint8)
     out[mask] = [0, 0, 0]  # traço preto
 
     img = Image.fromarray(out, "RGB")
@@ -174,8 +161,7 @@ def signature_from_canvas_as_jpeg(arr: np.ndarray, jpeg_quality: int = 92) -> Op
     img.save(b, format="JPEG", quality=jpeg_quality)
     return b.getvalue()
 
-
-# ---- OCR helpers ----
+# --- OCR helpers ---
 def ocr_text(pil: Image.Image) -> str:
     img = ImageOps.grayscale(pil).filter(ImageFilter.SHARPEN)
     img = img.point(lambda x: 255 if x > 165 else 0, mode="1").convert("L")
@@ -207,8 +193,7 @@ def find_sn_anchor_bbox(pil: Image.Image) -> Optional[Tuple[int,int,int,int]]:
     ex,ey = int(W*0.45), int(H*0.20)
     return (max(0,x-10), max(0,y-ey//2), min(W,x+w+ex), min(H,y+h+ey))
 
-
-# ---- códigos de barras (opcional) ----
+# --- códigos de barras (opcional) ---
 def read_barcodes_with_bbox(pil: Image.Image):
     out=[]
     if zbar_decode:
@@ -229,7 +214,7 @@ def read_barcodes_with_bbox(pil: Image.Image):
                     except Exception:
                         out.append((r.text.strip(),None))
         except Exception: pass
-    # dedup
+    # dedup por valor
     seen=set(); res=[]
     for v,c in out:
         if v not in seen: res.append((v,c)); seen.add(v)
@@ -253,8 +238,7 @@ def detect_model(text_upper: str) -> Optional[str]:
         if rx.search(text_upper): return name
     return None
 
-
-# ---- scanner principal ----
+# --- scanner principal ---
 def _jpg_bytes(pil: Image.Image, q=92) -> Optional[bytes]:
     try:
         b=BytesIO(); pil.convert("RGB").save(b, format="JPEG", quality=q); return b.getvalue()
@@ -287,7 +271,6 @@ def scan_one_image(pil: Image.Image, fonte: str) -> Dict:
     macs = REGEX_MAC.findall(text or "")
     mac = macs[0] if macs else ""
 
-    # Se SN foi válido, guarda a foto para anexar ao PDF (deduplicando)
     if is_valid_sn(modelo, sn):
         jpg=_jpg_bytes(pil,92)
         if jpg:
@@ -317,8 +300,7 @@ def push_to_textarea_from_items():
         if ln not in seen2: all_lines.append(ln); seen2.add(ln)
     ss.seriais_texto="\n".join(all_lines)
 
-
-# ---- PDF helpers ----
+# --- PDF helpers ---
 def search_once(page, texts):
     if isinstance(texts,str): texts=[texts]
     for t in texts:
@@ -342,9 +324,9 @@ def descricao_block(seriais: str, atividade: str, info: str) -> str:
     if info and info.strip(): parts.append("INFORMAÇÕES ADICIONAIS:\n"+info.strip())
     return "\n\n".join(parts) if parts else ""
 
-def insert_descricao_autofit(page, labels, text):
+def insert_descricao_autofit(page, label, text):
     if not text: return
-    r=search_once(page, labels)
+    r=search_once(page, label)
     if not r: return
     n=len(text.splitlines())
     if n<=15: fs,h=10,240
@@ -354,41 +336,43 @@ def insert_descricao_autofit(page, labels, text):
     rect=fitz.Rect(r.x0, r.y1+20, r.x0+540, r.y1+20+h)
     page.insert_textbox(rect, text, fontsize=fs, align=0)
 
-def insert_signature_jpeg(page, labels, sig_jpg_bytes: Optional[bytes], rel_rect):
+def insert_signature_jpeg(page, label, sig_jpg_bytes: Optional[bytes], rel_rect):
     """
     Insere a assinatura no PDF como JPEG (RGB, fundo branco).
     Não existe alpha em nenhum momento → não há fundo preto.
     """
     if not sig_jpg_bytes: return
-    r=search_once(page, labels)
+    r=search_once(page, label)
     if not r: return
     rect = fitz.Rect(r.x0+rel_rect[0], r.y1+rel_rect[1], r.x0+rel_rect[2], r.y1+rel_rect[3])
     page.insert_image(rect, stream=sig_jpg_bytes, keep_proportion=True)
 
-
-# ===================== UI (1 página, ordem solicitada) =====================
+# ===================== UI (1 página) =====================
 
 # 1) DADOS DO RAT
-with st.expander("1) 🧾 Dados do RAT (preencha primeiro)", expanded=True):
+with st.expander("1) 🧾 Dados do RAT (preencha aqui primeiro)", expanded=True):
     c1,c2 = st.columns(2)
     with c1:
-        st.text_input("Nº do chamado", value=ss.num_chamado, key="num_chamado")
         st.date_input("Data do atendimento", value=ss.data_atend, key="data_atend")
         st.time_input("Hora início", value=ss.hora_ini, key="hora_ini")
+        st.text_input("Nº do chamado", value=ss.num_chamado, key="num_chamado")
+        st.text_input("Nome do técnico", value=ss.tec_nome, key="tec_nome")
+        st.text_input("RG/Documento do técnico", value=ss.tec_rg, key="tec_rg")
+    with c2:
         st.time_input("Hora término", value=ss.hora_fim, key="hora_fim")
         st.text_input("Distância (KM)", value=ss.distancia_km, key="distancia_km")
-    with c2:
         st.text_input("Cliente / Razão Social", value=ss.cliente_nome, key="cliente_nome")
-        st.text_input("Endereço", value=ss.endereco, key="endereco")
-        st.text_input("Bairro", value=ss.bairro, key="bairro")
-        st.text_input("Cidade", value=ss.cidade, key="cidade")
         st.text_input("Telefone (contato)", value=ss.contato_tel, key="contato_tel")
-        st.text_input("Contato (nome)", value=ss.contato_nome, key="contato_nome")
-        st.text_input("Contato (RG/Doc)", value=ss.contato_rg, key="contato_rg")
+
+    st.text_input("Endereço", value=ss.endereco, key="endereco")
+    st.text_input("Bairro", value=ss.bairro, key="bairro")
+    st.text_input("Cidade", value=ss.cidade, key="cidade")
+    st.text_input("Contato (nome)", value=ss.contato_nome, key="contato_nome")
+    st.text_input("Contato (RG/Doc)", value=ss.contato_rg, key="contato_rg")
 
 # 2) SERIAIS & DESCRIÇÃO (com Scanner)
 with st.expander("2) 🔎 Seriais & Descrição (inclui Scanner)", expanded=True):
-    # Scanner embutido
+    # Scanner embutido nesta seção
     with st.form("scanner_form"):
         cam_in = st.camera_input("📸 Tirar foto (abre câmera)", key="cam_in")
         imgs_in = st.file_uploader("📎 Enviar foto(s) de etiquetas", type=["jpg","jpeg","png","webp"],
@@ -470,13 +454,12 @@ with st.expander("2) 🔎 Seriais & Descrição (inclui Scanner)", expanded=True
 # 3) ASSINATURAS (por último)
 with st.expander("3) ✍️ Assinaturas (Técnico e Cliente) — fundo BRANCO garantido", expanded=True):
     st.caption("O PDF recebe a assinatura como JPEG (RGB, fundo branco). Isso elimina o fundo preto.")
-
     st.write("Assinatura do TÉCNICO")
     tec_canvas = st_canvas(
         fill_color="rgba(0,0,0,0)",
         stroke_width=3,
         stroke_color="#000000",
-        background_color="#FFFFFF",   # quadro branco p/ visibilidade
+        background_color="#FFFFFF",   # fundo do quadro BRANCO para melhor visualização
         width=800, height=180,
         drawing_mode="freedraw",
         key="sig_tec_canvas",
@@ -494,7 +477,7 @@ with st.expander("3) ✍️ Assinaturas (Técnico e Cliente) — fundo BRANCO ga
         fill_color="rgba(0,0,0,0)",
         stroke_width=3,
         stroke_color="#000000",
-        background_color="#FFFFFF",
+        background_color="#FFFFFF",   # fundo do quadro BRANCO
         width=800, height=180,
         drawing_mode="freedraw",
         key="sig_cli_canvas",
@@ -509,10 +492,12 @@ with st.expander("3) ✍️ Assinaturas (Técnico e Cliente) — fundo BRANCO ga
     if st.button("🧹 Limpar assinaturas salvas"):
         ss.sig_tec_jpg=None; ss.sig_cli_jpg=None; st.info("Assinaturas removidas.")
 
-
 # ====== GERAÇÃO DO PDF ======
 st.write("---")
-st.checkbox("Anexar fotos com S/N ao PDF", key="anexar_fotos", value=ss.anexar_fotos)
+if st.checkbox("Anexar fotos com S/N ao PDF", key="anexar_fotos", value=ss.anexar_fotos):
+    ss.anexar_fotos = True
+else:
+    ss.anexar_fotos = False
 
 if st.button("🧾 Gerar PDF preenchido"):
     try:
@@ -549,8 +534,8 @@ if st.button("🧾 Gerar PDF preenchido"):
                         str(ss.get("distancia_km","")), 0, 3)
 
         # Descrição (inclui seriais)
-        bloco = descricao_block(ss.get("seriais_texto_area",""), ss.get("atividade_txt",""), ss.get("info_txt",""))
-        insert_descricao_autofit(page, ["DESCRIÇÃO DE ATENDIMENTO","DESCRICAO DE ATENDIMENTO"], bloco)
+        block = descricao_block(ss.get("seriais_texto_area",""), ss.get("atividade_txt",""), ss.get("info_txt",""))
+        insert_descricao_autofit(page, ["DESCRIÇÃO DE ATENDIMENTO","DESCRICAO DE ATENDIMENTO"], block)
 
         # Assinaturas — JPEG (RGB BRANCO)
         insert_signature_jpeg(page, ["ASSINATURA:", "Assinatura:"], ss.get("sig_tec_jpg"),
@@ -558,7 +543,7 @@ if st.button("🧾 Gerar PDF preenchido"):
         insert_signature_jpeg(page, ["DATA CARIMBO / ASSINATURA", "ASSINATURA CLIENTE", "CLIENTE"],
                               ss.get("sig_cli_jpg"), (110, 12 - 3.5*CM, 430, 94 - 3.5*CM))
 
-        # Nº CHAMADO
+        # Nº chamado
         insert_right_of(page, [" Nº CHAMADO ", "Nº CHAMADO", "No CHAMADO"], ss.get("num_chamado",""),
                         dx=-(2*CM), dy=10)
 
