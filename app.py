@@ -37,17 +37,13 @@ st.set_page_config(page_title=APP_TITLE, layout="centered")
 st.title("📄 " + APP_TITLE)
 st.caption("Scanner adiciona seriais automaticamente (câmera, fotos ou PDF). Assinaturas com fundo removido no PDF.")
 
-# ---------------- Estado ----------------
+# ---------------- Estado não atrelado a widgets ----------------
 if "scanned_items" not in st.session_state:
     st.session_state.scanned_items = []  # cada item: {modelo, sn, mac, fonte}
 if "photos_to_append" not in st.session_state:
     st.session_state.photos_to_append = []  # bytes das fotos com S/N válido
 if "seriais_texto" not in st.session_state:
     st.session_state.seriais_texto = ""
-if "atividade_txt" not in st.session_state:
-    st.session_state.atividade_txt = ""
-if "info_txt" not in st.session_state:
-    st.session_state.info_txt = ""
 
 # ---------------- Utilidades ----------------
 REGEX_SN = re.compile(r'(?:S/?N[:\s\-]*)([A-Z0-9\-]{4,})', re.I)
@@ -378,14 +374,9 @@ with st.form("rat_mam"):
 
     c3, c4 = st.columns(2)
     with c3:
-        if st.form_submit_button("➕ Adicionar detecções ao campo de seriais", use_container_width=True):
-            st.session_state.seriais_texto = st.session_state.get("seriais_texto_area", st.session_state.seriais_texto)
-            push_scanned_to_textarea()
-            st.success("Detecções adicionadas ao campo de seriais.")
+        add_btn = st.form_submit_button("➕ Adicionar detecções ao campo de seriais", use_container_width=True)
     with c4:
-        if st.form_submit_button("🗑️ Limpar detecções (scanner)", use_container_width=True):
-            st.session_state.scanned_items = []
-            st.info("Lista de detecções limpa.")
+        clear_btn = st.form_submit_button("🗑️ Limpar detecções (scanner)", use_container_width=True)
 
     st.subheader("4) Técnico")
     tec_nome = st.text_input("Nome do técnico")
@@ -420,12 +411,17 @@ with st.form("rat_mam"):
 
     anexar_fotos = st.checkbox("Anexar as fotos onde o S/N foi reconhecido ao final do PDF", value=True)
 
-    submitted = st.form_submit_button("🧾 Gerar PDF preenchido", use_container_width=True)
+    submit_btn = st.form_submit_button("🧾 Gerar PDF preenchido", use_container_width=True)
 
-# campos de descrição (fora do form para não sumirem no submit)
+# ---------------- campos de descrição (fora do form para não sumirem no submit) ----------------
 st.subheader("5) Descrição de Atendimento")
-st.session_state.atividade_txt = st.text_area("Atividade (texto livre do técnico)", height=80, key="atividade_txt")
-st.session_state.info_txt = st.text_area("Informações adicionais (opcional)", height=60, key="info_txt")
+
+atividade_txt = st.text_area(
+    "Atividade (texto livre do técnico)", height=80, key="atividade_txt"
+)
+info_txt = st.text_area(
+    "Informações adicionais (opcional)", height=60, key="info_txt"
+)
 
 # preview das fotos que irão para o PDF
 if st.session_state.photos_to_append:
@@ -435,17 +431,28 @@ if st.session_state.photos_to_append:
         with cols[i % 3]:
             st.image(b, caption=f"Foto {i+1}", use_container_width=True)
 
+# ---------------- pós-clique dos botões do form ----------------
+if 'add_btn' in locals() and add_btn:
+    # atualiza textarea com as detecções válidas, preservando conteúdo
+    st.session_state.seriais_texto = st.session_state.get("seriais_texto_area", st.session_state.seriais_texto)
+    push_scanned_to_textarea()
+    st.success("Detecções adicionadas ao campo de seriais.")
+
+if 'clear_btn' in locals() and clear_btn:
+    st.session_state.scanned_items = []
+    st.info("Lista de detecções limpa.")
+
 # ---------------- Helpers PDF ----------------
-def build_descricao_block(seriais_raw: str) -> str:
+def build_descricao_block(seriais_raw: str, atividade_txt: str, info_txt: str) -> str:
     partes = []
     if seriais_raw and seriais_raw.strip():
         seriais = [ln.strip() for ln in seriais_raw.splitlines() if ln.strip()]
         if seriais:
             partes.append("SERIAIS:\n" + "\n".join(f"- {s}" for s in seriais))
-    if st.session_state.atividade_txt and st.session_state.atividade_txt.strip():
-        partes.append("ATIVIDADE:\n" + st.session_state.atividade_txt.strip())
-    if st.session_state.info_txt and st.session_state.info_txt.strip():
-        partes.append("INFORMAÇÕES ADICIONAIS:\n" + st.session_state.info_txt.strip())
+    if atividade_txt and atividade_txt.strip():
+        partes.append("ATIVIDADE:\n" + atividade_txt.strip())
+    if info_txt and info_txt.strip():
+        partes.append("INFORMAÇÕES ADICIONAIS:\n" + info_txt.strip())
     return "\n\n".join(partes) if partes else ""
 
 def insert_descricao_autofit(page, label, text):
@@ -471,7 +478,7 @@ def insert_descricao_autofit(page, label, text):
     page.insert_textbox(rect, text, fontsize=fontsize, align=0)
 
 # ---------------- Geração PDF ----------------
-if submitted:
+if 'submit_btn' in locals() and submit_btn:
     try:
         base_bytes = load_pdf_bytes(PDF_BASE_PATH)
     except FileNotFoundError:
@@ -514,7 +521,7 @@ if submitted:
         # Descrição + seriais
         seriais_raw = st.session_state.get("seriais_texto_area", st.session_state.seriais_texto)
         st.session_state.seriais_texto = seriais_raw  # sincroniza
-        bloco_desc = build_descricao_block(seriais_raw)
+        bloco_desc = build_descricao_block(seriais_raw, atividade_txt=st.session_state.get("atividade_txt",""), info_txt=st.session_state.get("info_txt",""))
         insert_descricao_autofit(page, ["DESCRIÇÃO DE ATENDIMENTO","DESCRICAO DE ATENDIMENTO"], bloco_desc)
 
         # Técnico (RG / Nome)
@@ -543,8 +550,8 @@ if submitted:
         insert_right_of(page, [" Nº CHAMADO ", "Nº CHAMADO", "No CHAMADO"],
                         num_chamado, dx=-(2*CM), dy=10)
 
-        # Anexar fotos no final (uma por página) somente se checkbox marcado
-        if st.session_state.photos_to_append and st.session_state.photos_to_append and 'anexar_fotos' in locals() and anexar_fotos:
+        # Anexar fotos no final (uma por página)
+        if st.session_state.photos_to_append and anexar_fotos:
             for img_bytes in st.session_state.photos_to_append:
                 try:
                     page_img = doc.new_page()
