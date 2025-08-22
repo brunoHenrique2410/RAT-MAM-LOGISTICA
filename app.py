@@ -1,7 +1,7 @@
-# app.py — RAT MAM (página única; Scanner • Assinaturas • Dados & PDF)
-# - OCR Tesseract OBRIGATÓRIO (mensagem clara se faltar)
+# app.py — RAT MAM (Página Única, expanders) com correção de fundo preto nas assinaturas
+# - OCR Tesseract OBRIGATÓRIO (mensagem clara se ausente)
 # - Scanner: câmera / fotos / PDF (sem pré-visualização), com deduplicação e "Jogar S/N"
-# - Assinaturas: 2 canvas + salvar em PNG (transparente ou branco) — CORRIGIDO fundo preto
+# - Assinaturas: 2 canvas; salva como PNG RGBA (transparente) ou RGB (branco) — corrige fundo preto
 # - Dados & PDF: preenche RAT base + anexa fotos (páginas novas)
 # - Sem conflitos de session_state com widgets
 
@@ -15,12 +15,14 @@ from PIL import Image, ImageOps, ImageFilter
 import numpy as np
 import fitz  # PyMuPDF
 
-# Dependências opcionais (leitores de código); Tesseract e Canvas são obrigatórios
+# --------- Dependências (OBRIG/OPCIONAIS) ---------
+# Tesseract (OBRIGATÓRIO)
 try:
     import pytesseract
 except Exception:
     pytesseract = None
 
+# Leitores de código de barras (OPCIONAIS)
 try:
     from pyzbar.pyzbar import decode as zbar_decode
 except Exception:
@@ -31,6 +33,7 @@ try:
 except Exception:
     zxingcpp = None
 
+# Canvas (OBRIGATÓRIO para assinaturas)
 try:
     from streamlit_drawable_canvas import st_canvas
     CANVAS_AVAILABLE = True
@@ -41,11 +44,11 @@ except Exception:
 # -------------------- CONFIG --------------------
 PDF_BASE_PATH = "RAT MAM.pdf"
 APP_TITLE = "RAT MAM – Scanner + Assinaturas (Página Única)"
-CM = 28.3465  # pt por cm (A4 ~595x842 pt)
+CM = 28.3465  # pontos por cm
 
 st.set_page_config(page_title=APP_TITLE, layout="centered")
 st.title("📄 " + APP_TITLE)
-st.caption("Tudo em uma página: Scanner • Assinaturas • Dados & PDF. Assinatura corrigida para evitar fundo preto.")
+st.caption("Seções isoladas: Scanner • Assinaturas • Dados & PDF — tudo em uma única página.")
 
 # -------------------- VERIFICAÇÕES --------------------
 def ensure_tesseract_available():
@@ -68,7 +71,10 @@ def ensure_tesseract_available():
 ensure_tesseract_available()
 
 if not CANVAS_AVAILABLE:
-    st.error("Falta o componente de canvas. Instale `streamlit-drawable-canvas` no requirements e atualize o app.")
+    st.error(
+        "O componente de canvas não está disponível. Instale `streamlit-drawable-canvas` "
+        "no requirements e atualize a aplicação."
+    )
     st.stop()
 
 # -------------------- ESTADO --------------------
@@ -84,7 +90,7 @@ ss.setdefault("anexar_fotos", True)      # checkbox (widget controla)
 # Assinaturas salvas (PNG pronto)
 ss.setdefault("sig_tec_png", None)       # bytes PNG (RGBA ou RGB)
 ss.setdefault("sig_cli_png", None)       # bytes PNG (RGBA ou RGB)
-ss.setdefault("assinatura_transparente", True)  # toggle p/ fundo transparente/branco
+ss.setdefault("assinatura_transparente", True)  # toggle transparente/branco
 
 # Dados do RAT (defaults)
 defaults = {
@@ -146,9 +152,9 @@ def load_pdf_bytes(path: str) -> bytes:
 # -------------------- Assinaturas (canvas -> PNG) --------------------
 def signature_from_canvas(arr: np.ndarray, transparente: bool = True) -> Optional[Image.Image]:
     """
-    Converte o RGBA do canvas em assinatura com traço preto.
-    - Se transparente=True → PNG RGBA (alpha preservado) — evita fundo preto.
-    - Se transparente=False → PNG RGB (fundo branco chapado).
+    Converte a imagem RGBA do canvas:
+    - transparente=True  -> PNG RGBA, traço preto, fundo 100% transparente (alpha=0)
+    - transparente=False -> PNG RGB, traço preto, fundo branco chapado
     """
     if arr is None or arr.ndim != 3 or arr.shape[2] < 4:
         return None
@@ -156,13 +162,15 @@ def signature_from_canvas(arr: np.ndarray, transparente: bool = True) -> Optiona
     mask = (rgba[:, :, 3] > 0)
 
     if transparente:
+        # Saída RGBA com fundo totalmente transparente
         out = np.zeros((rgba.shape[0], rgba.shape[1], 4), dtype=np.uint8)
-        out[mask, 0] = 0  # preto
-        out[mask, 1] = 0
-        out[mask, 2] = 0
-        out[mask, 3] = 255  # traço opaco
+        out[mask, 0] = 0   # R
+        out[mask, 1] = 0   # G
+        out[mask, 2] = 0   # B
+        out[mask, 3] = 255 # A
         return Image.fromarray(out, mode="RGBA")
     else:
+        # Saída RGB com fundo branco chapado (sem alpha)
         out = np.full((rgba.shape[0], rgba.shape[1], 3), 255, dtype=np.uint8)
         out[mask] = [0, 0, 0]
         return Image.fromarray(out, mode="RGB")
@@ -171,6 +179,7 @@ def to_png_bytes(img: Image.Image, transparente: bool = True) -> Optional[bytes]
     if img is None:
         return None
     buf = BytesIO()
+    # Garante modo correto para o PNG final
     if transparente and img.mode != "RGBA":
         img = img.convert("RGBA")
     if not transparente and img.mode != "RGB":
@@ -210,7 +219,7 @@ def find_sn_anchor_bbox(pil: Image.Image) -> Optional[Tuple[int,int,int,int]]:
     ex, ey = int(W*0.45), int(H*0.20)
     return (max(0, x-10), max(0, y-ey//2), min(W, x+w+ex), min(H, y+h+ey))
 
-# -------------------- códigos de barras (opcionais) --------------------
+# -------------------- códigos de barras --------------------
 def read_barcodes_with_bbox(pil: Image.Image):
     out = []
     if zbar_decode:
@@ -350,24 +359,22 @@ def insert_right_of(page, labels, content, dx=0, dy=0, fontsize=10):
     page.insert_text((x, y), str(content), fontsize=fontsize)
 
 def insert_signature(page, label, png_bytes: Optional[bytes], rel_rect):
-    """
-    Insere assinatura PNG no PDF.
-    - Se PNG RGBA → alpha preservado (sem fundo preto).
-    - Se PNG RGB → fundo chapado branco (seguro p/ qualquer viewer).
-    """
+    """Insere PNG (RGBA respeita o alpha; RGB fica chapado)."""
     if not png_bytes: return
     r = search_once(page, label)
     if not r: return
     rect = fitz.Rect(r.x0 + rel_rect[0], r.y1 + rel_rect[1], r.x0 + rel_rect[2], r.y1 + rel_rect[3])
-    page.insert_image(rect, stream=png_bytes)
+    page.insert_image(rect, stream=png_bytes, keep_proportion=True)
 
 def descricao_block(seriais: str, atividade: str, info: str) -> str:
     partes = []
     if seriais and seriais.strip():
         linhas = [ln.strip() for ln in seriais.splitlines() if ln.strip()]
         partes.append("SERIAIS:\n" + "\n".join(f"- {ln}" for ln in linhas))
-    if atividade and atividade.strip(): partes.append("ATIVIDADE:\n" + atividade.strip())
-    if info and info.strip(): partes.append("INFORMAÇÕES ADICIONAIS:\n" + info.strip())
+    if atividade and atividade.strip():
+        partes.append("ATIVIDADE:\n" + atividade.strip())
+    if info and info.strip():
+        partes.append("INFORMAÇÕES ADICIONAIS:\n" + info.strip())
     return "\n\n".join(partes) if partes else ""
 
 def insert_descricao_autofit(page, label, text):
@@ -472,7 +479,7 @@ with st.expander("🧪 Scanner de S/N (Câmera • Fotos • PDF)", expanded=Tru
 
 # ---- Seção 2: Assinaturas ----
 with st.expander("✍️ Assinaturas (Técnico e Cliente)", expanded=True):
-    st.checkbox("Salvar assinatura com fundo transparente (recomendado)", key="assinatura_transparente",
+    st.checkbox("Salvar com fundo transparente (recomendado)", key="assinatura_transparente",
                 value=ss.assinatura_transparente)
 
     st.write("Assinatura do TÉCNICO")
@@ -489,7 +496,10 @@ with st.expander("✍️ Assinaturas (Técnico e Cliente)", expanded=True):
         arr = getattr(tec_canvas, "image_data", None)
         img = signature_from_canvas(arr, transparente=ss.assinatura_transparente) if arr is not None else None
         ss.sig_tec_png = to_png_bytes(img, transparente=ss.assinatura_transparente)
-        st.success("Assinatura do técnico salva." if ss.sig_tec_png else "Nada para salvar (assine no quadro).")
+        if ss.sig_tec_png:
+            st.success("Assinatura do técnico salva.")
+        else:
+            st.warning("Nada para salvar (assine no quadro e tente novamente).")
 
     st.write("---")
     st.write("Assinatura do CLIENTE")
@@ -506,7 +516,10 @@ with st.expander("✍️ Assinaturas (Técnico e Cliente)", expanded=True):
         arr = getattr(cli_canvas, "image_data", None)
         img = signature_from_canvas(arr, transparente=ss.assinatura_transparente) if arr is not None else None
         ss.sig_cli_png = to_png_bytes(img, transparente=ss.assinatura_transparente)
-        st.success("Assinatura do cliente salva." if ss.sig_cli_png else "Nada para salvar (assine no quadro).")
+        if ss.sig_cli_png:
+            st.success("Assinatura do cliente salva.")
+        else:
+            st.warning("Nada para salvar (assine no quadro e tente novamente).")
 
     if st.button("🧹 Limpar assinaturas salvas"):
         ss.sig_tec_png = None
@@ -528,7 +541,6 @@ with st.expander("🧾 Dados do RAT & Geração do PDF", expanded=True):
         st.text_input("Distância (KM)", value=ss.distancia_km, key="distancia_km")
         st.text_input("Cliente / Razão Social", value=ss.cliente_nome, key="cliente_nome")
         st.text_input("Telefone (contato)", value=ss.contato_tel, key="contato_tel")
-
     st.text_input("Endereço", value=ss.endereco, key="endereco")
     st.text_input("Bairro", value=ss.bairro, key="bairro")
     st.text_input("Cidade", value=ss.cidade, key="cidade")
@@ -548,6 +560,7 @@ with st.expander("🧾 Dados do RAT & Geração do PDF", expanded=True):
     st.checkbox("Anexar fotos com S/N ao PDF", key="anexar_fotos", value=ss.anexar_fotos)
 
     if st.button("🧾 Gerar PDF preenchido"):
+        # Carrega PDF base
         try:
             base = load_pdf_bytes(PDF_BASE_PATH)
         except FileNotFoundError:
@@ -564,7 +577,7 @@ with st.expander("🧾 Dados do RAT & Geração do PDF", expanded=True):
             insert_right_of(page, ["Cidade:", "CIDADE:"],     ss.get("cidade",""), 6, 1)
             insert_right_of(page, ["Contato:"],               ss.get("contato_nome",""), 6, 1)
 
-            # RG do contato (à direita de "Contato")
+            # RG do contato (posição simples à direita de "Contato")
             r_cont = search_once(page, ["Contato:"])
             if r_cont and ss.get("contato_rg",""):
                 x = r_cont.x1 + 40; y = r_cont.y0 + r_cont.height/1.5 + 6
@@ -590,7 +603,7 @@ with st.expander("🧾 Dados do RAT & Geração do PDF", expanded=True):
             )
             insert_descricao_autofit(page, ["DESCRIÇÃO DE ATENDIMENTO","DESCRICAO DE ATENDIMENTO"], bloco)
 
-            # Assinaturas — usa APENAS os PNG salvos (RGBA preserva alpha; RGB é branco)
+            # Assinaturas (PNG salvos — RGBA respeita alpha; RGB branco)
             insert_signature(page, ["ASSINATURA:", "Assinatura:"], ss.get("sig_tec_png"),
                              (110 - 2*CM, 0 - 1*CM, 330 - 2*CM, 54 - 1*CM))
             insert_signature(page, ["DATA CARIMBO / ASSINATURA", "ASSINATURA CLIENTE", "CLIENTE"],
