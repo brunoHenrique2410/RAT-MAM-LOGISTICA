@@ -1,4 +1,4 @@
 tesseract-ocr
-libzbar0
 libgl1
+libzbar0
 libglib2.0-0
