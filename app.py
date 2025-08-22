@@ -2,14 +2,6 @@
 # 1) Dados do RAT
 # 2) Seriais & Descrição (com Scanner)
 # 3) Assinaturas (SEM fundo preto: JPEG com fundo branco)
-#
-# Requisitos:
-#   streamlit
-#   pillow
-#   pytesseract  + binário tesseract-ocr no sistema
-#   PyMuPDF (fitz)
-#   streamlit-drawable-canvas
-#   (opcionais p/ códigos de barras) pyzbar, zxing-cpp
 
 from io import BytesIO
 from datetime import date, time
@@ -96,7 +88,7 @@ _def("seriais_texto", "")
 _def("scanned_items", [])       # [{modelo,sn,mac,fonte}]
 _def("photos_to_append", [])    # [jpg bytes]
 _def("seen_hashes", set())
-_def("anexar_fotos", True)
+_def("anexar_fotos", True)      # << inicial apenas; NÃO reatribuir após criar o checkbox!
 
 # assinaturas (JPEG com fundo branco)
 _def("sig_tec_jpg", None)       # bytes JPEG (RGB branco)
@@ -145,7 +137,6 @@ def load_pdf_bytes(path: str) -> bytes:
 def signature_from_canvas_as_jpeg(arr: np.ndarray, jpeg_quality: int = 92) -> Optional[bytes]:
     """
     Converte o canvas RGBA em imagem RGB com FUNDO BRANCO (sem alpha) e exporta como JPEG.
-    Isso elimina de vez o “fundo preto” em qualquer viewer de PDF.
     """
     if arr is None or arr.ndim != 3 or arr.shape[2] < 4:
         return None
@@ -339,7 +330,6 @@ def insert_descricao_autofit(page, label, text):
 def insert_signature_jpeg(page, label, sig_jpg_bytes: Optional[bytes], rel_rect):
     """
     Insere a assinatura no PDF como JPEG (RGB, fundo branco).
-    Não existe alpha em nenhum momento → não há fundo preto.
     """
     if not sig_jpg_bytes: return
     r=search_once(page, label)
@@ -372,7 +362,6 @@ with st.expander("1) 🧾 Dados do RAT (preencha aqui primeiro)", expanded=True)
 
 # 2) SERIAIS & DESCRIÇÃO (com Scanner)
 with st.expander("2) 🔎 Seriais & Descrição (inclui Scanner)", expanded=True):
-    # Scanner embutido nesta seção
     with st.form("scanner_form"):
         cam_in = st.camera_input("📸 Tirar foto (abre câmera)", key="cam_in")
         imgs_in = st.file_uploader("📎 Enviar foto(s) de etiquetas", type=["jpg","jpeg","png","webp"],
@@ -459,7 +448,7 @@ with st.expander("3) ✍️ Assinaturas (Técnico e Cliente) — fundo BRANCO ga
         fill_color="rgba(0,0,0,0)",
         stroke_width=3,
         stroke_color="#000000",
-        background_color="#FFFFFF",   # fundo do quadro BRANCO para melhor visualização
+        background_color="#FFFFFF",
         width=800, height=180,
         drawing_mode="freedraw",
         key="sig_tec_canvas",
@@ -477,7 +466,7 @@ with st.expander("3) ✍️ Assinaturas (Técnico e Cliente) — fundo BRANCO ga
         fill_color="rgba(0,0,0,0)",
         stroke_width=3,
         stroke_color="#000000",
-        background_color="#FFFFFF",   # fundo do quadro BRANCO
+        background_color="#FFFFFF",
         width=800, height=180,
         drawing_mode="freedraw",
         key="sig_cli_canvas",
@@ -494,10 +483,8 @@ with st.expander("3) ✍️ Assinaturas (Técnico e Cliente) — fundo BRANCO ga
 
 # ====== GERAÇÃO DO PDF ======
 st.write("---")
-if st.checkbox("Anexar fotos com S/N ao PDF", key="anexar_fotos", value=ss.anexar_fotos):
-    ss.anexar_fotos = True
-else:
-    ss.anexar_fotos = False
+# NÃO reatribua ss.anexar_fotos aqui; apenas leia o valor do widget:
+st.checkbox("Anexar fotos com S/N ao PDF", key="anexar_fotos", value=ss.anexar_fotos)
 
 if st.button("🧾 Gerar PDF preenchido"):
     try:
@@ -516,7 +503,7 @@ if st.button("🧾 Gerar PDF preenchido"):
         insert_right_of(page, ["Bairro:", "BAIRRO:"],     ss.get("bairro",""), 6, 1)
         insert_right_of(page, ["Cidade:", "CIDADE:"],     ss.get("cidade",""), 6, 1)
         insert_right_of(page, ["Contato:"],               ss.get("contato_nome",""), 6, 1)
-        # RG do contato (à direita de "Contato")
+        # RG do contato
         r_cont = page.search_for("Contato:")
         if r_cont and ss.get("contato_rg",""):
             r = r_cont[0]; x = r.x1 + 40; y = r.y0 + r.height/1.5 + 6
@@ -547,7 +534,7 @@ if st.button("🧾 Gerar PDF preenchido"):
         insert_right_of(page, [" Nº CHAMADO ", "Nº CHAMADO", "No CHAMADO"], ss.get("num_chamado",""),
                         dx=-(2*CM), dy=10)
 
-        # Fotos anexas
+        # Fotos anexas (agora lendo APENAS o valor do widget):
         if ss.get("anexar_fotos", True) and ss.photos_to_append:
             for img_bytes in ss.photos_to_append:
                 p = doc.new_page()
