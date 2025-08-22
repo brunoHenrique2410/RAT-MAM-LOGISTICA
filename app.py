@@ -1,13 +1,13 @@
-# app.py — RAT MAM (Página Única, expanders) com correção de fundo preto nas assinaturas
-# - OCR Tesseract OBRIGATÓRIO (mensagem clara se ausente)
-# - Scanner: câmera / fotos / PDF (sem pré-visualização), com deduplicação e "Jogar S/N"
-# - Assinaturas: 2 canvas; salva como PNG RGBA (transparente) ou RGB (branco) — corrige fundo preto
-# - Dados & PDF: preenche RAT base + anexa fotos (páginas novas)
-# - Sem conflitos de session_state com widgets
+# app.py — RAT MAM (página única)
+# - Scanner S/N: câmera, fotos e PDF (sem preview), dedup + "Jogar S/N"
+# - Grid para editar itens scaneados
+# - Assinaturas: canvas -> PNG RGB COM FUNDO BRANCO (sem alpha) — elimina fundo preto no PDF
+# - Geração do PDF a partir de "RAT MAM.pdf" + anexos das fotos lidas
+# - OCR Tesseract obrigatório
 
 from io import BytesIO
 from datetime import date, time
-from typing import List, Dict, Optional, Tuple
+from typing import Optional, Tuple, Dict
 import os, re, hashlib
 
 import streamlit as st
@@ -15,14 +15,19 @@ from PIL import Image, ImageOps, ImageFilter
 import numpy as np
 import fitz  # PyMuPDF
 
-# --------- Dependências (OBRIG/OPCIONAIS) ---------
-# Tesseract (OBRIGATÓRIO)
+# ---- dependências obrigatórias/opcionais ----
 try:
     import pytesseract
 except Exception:
     pytesseract = None
 
-# Leitores de código de barras (OPCIONAIS)
+try:
+    from streamlit_drawable_canvas import st_canvas
+    CANVAS_AVAILABLE = True
+except Exception:
+    CANVAS_AVAILABLE = False
+
+# leitores de código de barras (opcionais)
 try:
     from pyzbar.pyzbar import decode as zbar_decode
 except Exception:
@@ -33,27 +38,19 @@ try:
 except Exception:
     zxingcpp = None
 
-# Canvas (OBRIGATÓRIO para assinaturas)
-try:
-    from streamlit_drawable_canvas import st_canvas
-    CANVAS_AVAILABLE = True
-except Exception:
-    CANVAS_AVAILABLE = False
-
-
-# -------------------- CONFIG --------------------
+# ---- config ----
 PDF_BASE_PATH = "RAT MAM.pdf"
-APP_TITLE = "RAT MAM – Scanner + Assinaturas (Página Única)"
+APP_TITLE = "RAT MAM – Fechamento (Scanner + Assinaturas)"
 CM = 28.3465  # pontos por cm
 
 st.set_page_config(page_title=APP_TITLE, layout="centered")
 st.title("📄 " + APP_TITLE)
-st.caption("Seções isoladas: Scanner • Assinaturas • Dados & PDF — tudo em uma única página.")
+st.caption("Scanner • Assinaturas • Dados & PDF — tudo em uma página. Assinatura SEM fundo preto (RGB branco).")
 
-# -------------------- VERIFICAÇÕES --------------------
-def ensure_tesseract_available():
+# ---- checagens ----
+def ensure_tesseract():
     if pytesseract is None:
-        st.error("`pytesseract` não está instalado. Adicione `pytesseract` ao requirements e reinicie.")
+        st.error("Instale `pytesseract` no requirements.")
         st.stop()
     if os.environ.get("TESSERACT_CMD"):
         pytesseract.pytesseract.tesseract_cmd = os.environ["TESSERACT_CMD"]
@@ -61,57 +58,48 @@ def ensure_tesseract_available():
         _ = pytesseract.get_tesseract_version()
     except Exception:
         st.error(
-            "Tesseract OCR não encontrado no sistema.\n\n"
-            "Instale o binário do Tesseract:\n"
-            "• Ubuntu/Debian: `sudo apt-get update && sudo apt-get install -y tesseract-ocr`\n"
-            "• Windows: instale o Tesseract (UB Mannheim) e defina TESSERACT_CMD se necessário."
+            "Tesseract não encontrado.\n"
+            "Ubuntu/Debian: sudo apt-get update && sudo apt-get install -y tesseract-ocr\n"
+            "Windows: instale o Tesseract (UB Mannheim) e defina TESSERACT_CMD se necessário."
         )
         st.stop()
 
-ensure_tesseract_available()
-
+ensure_tesseract()
 if not CANVAS_AVAILABLE:
-    st.error(
-        "O componente de canvas não está disponível. Instale `streamlit-drawable-canvas` "
-        "no requirements e atualize a aplicação."
-    )
+    st.error("Instale `streamlit-drawable-canvas` no requirements.")
     st.stop()
 
-# -------------------- ESTADO --------------------
+# ---- estado ----
 ss = st.session_state
+def _def(k, v):
+    if k not in ss: ss[k] = v
 
-# Scanner / fotos / dedup
-ss.setdefault("scanned_items", [])       # [{modelo,sn,mac,fonte}]
-ss.setdefault("photos_to_append", [])    # [bytes JPEG]
-ss.setdefault("seen_hashes", set())      # hashes sha256 p/ deduplicar fotos
-ss.setdefault("seriais_texto", "")       # textarea consolidada
-ss.setdefault("anexar_fotos", True)      # checkbox (widget controla)
+# scanner / fotos
+_def("scanned_items", [])       # [{modelo,sn,mac,fonte}]
+_def("photos_to_append", [])    # [jpg bytes]
+_def("seen_hashes", set())
+_def("seriais_texto", "")
+_def("anexar_fotos", True)
 
-# Assinaturas salvas (PNG pronto)
-ss.setdefault("sig_tec_png", None)       # bytes PNG (RGBA ou RGB)
-ss.setdefault("sig_cli_png", None)       # bytes PNG (RGBA ou RGB)
-ss.setdefault("assinatura_transparente", True)  # toggle transparente/branco
+# assinaturas (PNG RGB com fundo branco)
+_def("sig_tec_png", None)       # bytes PNG (RGB)
+_def("sig_cli_png", None)       # bytes PNG (RGB)
 
-# Dados do RAT (defaults)
-defaults = {
-    "data_atend": date.today(),
-    "hora_ini": time(8,0),
-    "hora_fim": time(10,0),
-    "num_chamado": "",
-    "distancia_km": "",
-    "cliente_nome": "", "endereco": "", "bairro": "", "cidade": "",
-    "contato_nome": "", "contato_rg": "", "contato_tel": "",
-    "tec_nome": "", "tec_rg": "",
-    "atividade_txt": "", "info_txt": "",
-}
-for k, v in defaults.items():
-    ss.setdefault(k, v)
+# dados
+_def("data_atend", date.today())
+_def("hora_ini", time(8, 0))
+_def("hora_fim", time(10, 0))
+_def("num_chamado", "")
+_def("distancia_km", "")
+_def("cliente_nome", ""); _def("endereco", ""); _def("bairro", ""); _def("cidade", "")
+_def("contato_nome", ""); _def("contato_rg", ""); _def("contato_tel", "")
+_def("tec_nome", ""); _def("tec_rg", "")
+_def("atividade_txt", ""); _def("info_txt", "")
 
-# -------------------- REGEX / UTILITÁRIOS --------------------
+# ---- regex/util ----
 REGEX_SN_ANC        = re.compile(r'\bS/?N\b[:\-]?', re.I)
 REGEX_SN_FROM_TEXT  = re.compile(r'\bS/?N[:\s\-]*([A-Z0-9\-]{6,})', re.I)
 REGEX_MAC           = re.compile(r'(?:[0-9A-F]{2}[:-]){5}[0-9A-F]{2}', re.I)
-
 EQUIP_KEYWORDS = {
     "ER605": re.compile(r"\bER605\b", re.I),
     "ER7206": re.compile(r"\bER7206\b", re.I),
@@ -122,72 +110,51 @@ EQUIP_KEYWORDS = {
     "NHS COMPACT PLUS": re.compile(r"\bNHS\b", re.I),
 }
 SERIAL_REGEX = {
-    "ER605":             re.compile(r"^[0-9A-Z\-]{10,16}$", re.I),
-    "ER7206":            re.compile(r"^[0-9A-Z\-]{10,16}$", re.I),
-    "OC200":             re.compile(r"^[0-9A-Z]{12,14}$",  re.I),
-    "EAP610":            re.compile(r"^[0-9A-Z]{12,16}$",  re.I),
-    "SG3428MP":          re.compile(r"^[0-9]{12,14}$"),
-    "SG2210MP-8P":       re.compile(r"^[0-9]{12,14}$"),
-    "NHS COMPACT PLUS":  re.compile(r"^[0-9]{4,10}$"),
+    "ER605": re.compile(r"^[0-9A-Z\-]{10,16}$", re.I),
+    "ER7206": re.compile(r"^[0-9A-Z\-]{10,16}$", re.I),
+    "OC200": re.compile(r"^[0-9A-Z]{12,14}$", re.I),
+    "EAP610": re.compile(r"^[0-9A-Z]{12,16}$", re.I),
+    "SG3428MP": re.compile(r"^[0-9]{12,14}$"),
+    "SG2210MP-8P": re.compile(r"^[0-9]{12,14}$"),
+    "NHS COMPACT PLUS": re.compile(r"^[0-9]{4,10}$"),
 }
 FALLBACK_SN = re.compile(r"^[0-9A-Z\-]{6,}$", re.I)
 
 def is_valid_sn(modelo: Optional[str], sn: Optional[str]) -> bool:
-    if not sn:
-        return False
-    if modelo and modelo in SERIAL_REGEX:
-        return bool(SERIAL_REGEX[modelo].match(sn))
+    if not sn: return False
+    if modelo in SERIAL_REGEX and SERIAL_REGEX[modelo].match(sn): return True
     return bool(FALLBACK_SN.match(sn))
 
 def normalize_phone(s: str) -> str:
     d = "".join(ch for ch in (s or "") if ch.isdigit())
-    if len(d) == 11: return f"({d[:2]}) {d[2:7]}-{d[7:]}"
-    if len(d) == 10: return f"({d[:2]}) {d[2:6]}-{d[6:]}"
+    if len(d)==11: return f"({d[:2]}) {d[2:7]}-{d[7:]}"
+    if len(d)==10: return f"({d[:2]}) {d[2:6]}-{d[6:]}"
     return s or ""
 
 @st.cache_data
 def load_pdf_bytes(path: str) -> bytes:
     with open(path, "rb") as f: return f.read()
 
-# -------------------- Assinaturas (canvas -> PNG) --------------------
-def signature_from_canvas(arr: np.ndarray, transparente: bool = True) -> Optional[Image.Image]:
+# ---- assinatura: canvas RGBA -> PNG RGB (fundo branco) ----
+def signature_from_canvas(arr: np.ndarray) -> Optional[Image.Image]:
     """
-    Converte a imagem RGBA do canvas:
-    - transparente=True  -> PNG RGBA, traço preto, fundo 100% transparente (alpha=0)
-    - transparente=False -> PNG RGB, traço preto, fundo branco chapado
+    Transforma o canvas (RGBA) em PNG RGB com fundo branco — sem alpha, sem risco de fundo preto.
     """
     if arr is None or arr.ndim != 3 or arr.shape[2] < 4:
         return None
     rgba = arr.astype("uint8")
-    mask = (rgba[:, :, 3] > 0)
+    mask = (rgba[:, :, 3] > 0)  # onde foi desenhado
 
-    if transparente:
-        # Saída RGBA com fundo totalmente transparente
-        out = np.zeros((rgba.shape[0], rgba.shape[1], 4), dtype=np.uint8)
-        out[mask, 0] = 0   # R
-        out[mask, 1] = 0   # G
-        out[mask, 2] = 0   # B
-        out[mask, 3] = 255 # A
-        return Image.fromarray(out, mode="RGBA")
-    else:
-        # Saída RGB com fundo branco chapado (sem alpha)
-        out = np.full((rgba.shape[0], rgba.shape[1], 3), 255, dtype=np.uint8)
-        out[mask] = [0, 0, 0]
-        return Image.fromarray(out, mode="RGB")
+    # Fundo branco (RGB)
+    out = np.full((rgba.shape[0], rgba.shape[1], 3), 255, dtype=np.uint8)
+    out[mask] = [0, 0, 0]  # traço preto
+    return Image.fromarray(out, "RGB")
 
-def to_png_bytes(img: Image.Image, transparente: bool = True) -> Optional[bytes]:
-    if img is None:
-        return None
-    buf = BytesIO()
-    # Garante modo correto para o PNG final
-    if transparente and img.mode != "RGBA":
-        img = img.convert("RGBA")
-    if not transparente and img.mode != "RGB":
-        img = img.convert("RGB")
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+def to_png_bytes(img: Image.Image) -> Optional[bytes]:
+    if img is None: return None
+    b = BytesIO(); img.save(b, format="PNG"); return b.getvalue()
 
-# -------------------- OCR helpers --------------------
+# ---- OCR helpers ----
 def ocr_text(pil: Image.Image) -> str:
     img = ImageOps.grayscale(pil).filter(ImageFilter.SHARPEN)
     img = img.point(lambda x: 255 if x > 165 else 0, mode="1").convert("L")
@@ -206,113 +173,101 @@ def ocr_data(pil: Image.Image):
 def find_sn_anchor_bbox(pil: Image.Image) -> Optional[Tuple[int,int,int,int]]:
     data = ocr_data(pil)
     if not data: return None
-    cand = []
-    for i, t in enumerate(data["text"]):
-        t = (t or "").strip()
+    cand=[]
+    for i,t in enumerate(data["text"]):
+        t=(t or "").strip()
         if REGEX_SN_ANC.fullmatch(t):
-            x, y = data["left"][i], data["top"][i]
-            w, h = data["width"][i], data["height"][i]
-            cand.append((x, y, w, h))
+            x,y = data["left"][i], data["top"][i]
+            w,h = data["width"][i], data["height"][i]
+            cand.append((x,y,w,h))
     if not cand: return None
-    x, y, w, h = sorted(cand, key=lambda r: r[2]*r[3], reverse=True)[0]
-    W, H = pil.size
-    ex, ey = int(W*0.45), int(H*0.20)
-    return (max(0, x-10), max(0, y-ey//2), min(W, x+w+ex), min(H, y+h+ey))
+    x,y,w,h = sorted(cand, key=lambda r:r[2]*r[3], reverse=True)[0]
+    W,H = pil.size
+    ex,ey = int(W*0.45), int(H*0.20)
+    return (max(0,x-10), max(0,y-ey//2), min(W,x+w+ex), min(H,y+h+ey))
 
-# -------------------- códigos de barras --------------------
+# ---- códigos de barras (opcional) ----
 def read_barcodes_with_bbox(pil: Image.Image):
-    out = []
+    out=[]
     if zbar_decode:
         try:
             for obj in zbar_decode(pil):
                 val = obj.data.decode("utf-8", errors="ignore").strip()
-                cx = obj.rect.left + obj.rect.width/2.0
-                cy = obj.rect.top  + obj.rect.height/2.0
-                out.append((val, (cx, cy)))
-        except Exception:
-            pass
+                cx = obj.rect.left + obj.rect.width/2
+                cy = obj.rect.top  + obj.rect.height/2
+                out.append((val,(cx,cy)))
+        except Exception: pass
     if zxingcpp:
         try:
             for r in zxingcpp.read_barcodes(pil):
                 if r.text:
                     try:
-                        pts = r.position
-                        cx = sum(p.x for p in pts)/len(pts)
-                        cy = sum(p.y for p in pts)/len(pts)
-                        out.append((r.text.strip(), (cx, cy)))
+                        pts=r.position; cx=sum(p.x for p in pts)/len(pts); cy=sum(p.y for p in pts)/len(pts)
+                        out.append((r.text.strip(),(cx,cy)))
                     except Exception:
-                        out.append((r.text.strip(), None))
-        except Exception:
-            pass
-    # dedup
-    seen, res = set(), []
-    for v, c in out:
-        if v not in seen:
-            res.append((v, c)); seen.add(v)
+                        out.append((r.text.strip(),None))
+        except Exception: pass
+    # dedup por valor
+    seen=set(); res=[]
+    for v,c in out:
+        if v not in seen: res.append((v,c)); seen.add(v)
     return res
 
-def pick_sn_from_barcodes_near_roi(pil: Image.Image, roi: Tuple[int,int,int,int]) -> Optional[str]:
+def pick_sn_from_barcodes_near_roi(pil: Image.Image, roi) -> Optional[str]:
     x0,y0,x1,y1 = roi
-    cx, cy = (x0+x1)/2.0, (y0+y1)/2.0
-    cand = []
-    for val, center in read_barcodes_with_bbox(pil):
-        if REGEX_MAC.fullmatch(val):
-            continue
-        if not re.fullmatch(r"[A-Z0-9\-]{6,}", val, re.I):
-            continue
+    cx,cy=(x0+x1)/2,(y0+y1)/2
+    cand=[]
+    for val,center in read_barcodes_with_bbox(pil):
+        if REGEX_MAC.fullmatch(val): continue
+        if not re.fullmatch(r"[A-Z0-9\-]{6,}", val, re.I): continue
         dist = (center[0]-cx)**2 + (center[1]-cy)**2 if center else 1e18
-        cand.append((dist, val))
+        cand.append((dist,val))
     if not cand: return None
-    cand.sort(key=lambda x: x[0])
+    cand.sort(key=lambda x:x[0])
     return cand[0][1]
 
 def detect_model(text_upper: str) -> Optional[str]:
-    for name, rx in EQUIP_KEYWORDS.items():
-        if rx.search(text_upper):
-            return name
+    for name,rx in EQUIP_KEYWORDS.items():
+        if rx.search(text_upper): return name
     return None
 
-# -------------------- scanner principal --------------------
-def _jpg_bytes(pil: Image.Image, quality=92) -> Optional[bytes]:
+# ---- scanner principal ----
+def _jpg_bytes(pil: Image.Image, q=92) -> Optional[bytes]:
     try:
-        b = BytesIO()
-        pil.convert("RGB").save(b, format="JPEG", quality=quality)
-        return b.getvalue()
-    except Exception:
-        return None
+        b=BytesIO(); pil.convert("RGB").save(b, format="JPEG", quality=q); return b.getvalue()
+    except Exception: return None
 
-def _fingerprint_bytes(b: bytes) -> str:
-    return hashlib.sha256(b).hexdigest()
+def _fingerprint(b: bytes) -> str: return hashlib.sha256(b).hexdigest()
 
 def scan_one_image(pil: Image.Image, fonte: str) -> Dict:
     text = ocr_text(pil)
     up = (text or "").upper()
     modelo = detect_model(up)
 
+    sn=None
     roi = find_sn_anchor_bbox(pil)
-    sn = None
     if roi:
         sn = pick_sn_from_barcodes_near_roi(pil, roi)
         if not sn:
-            local_txt = ocr_text(pil.crop(roi))
-            m = REGEX_SN_FROM_TEXT.search(local_txt or "")
-            if m: sn = m.group(1).strip()
+            local = ocr_text(pil.crop(roi))
+            m = REGEX_SN_FROM_TEXT.search(local or "")
+            if m: sn=m.group(1).strip()
 
     if not sn:
         m = REGEX_SN_FROM_TEXT.search(text or "")
-        if m: sn = m.group(1).strip()
+        if m: sn=m.group(1).strip()
 
     if not sn:
-        tokens = [t for t in re.findall(r"[A-Z0-9\-]{8,}", up) if not REGEX_MAC.fullmatch(t)]
+        tokens=[t for t in re.findall(r"[A-Z0-9\-]{8,}", up) if not REGEX_MAC.fullmatch(t)]
         sn = next((t for t in tokens if is_valid_sn(modelo, t)), (tokens[0] if tokens else None))
 
     macs = REGEX_MAC.findall(text or "")
     mac = macs[0] if macs else ""
 
     if is_valid_sn(modelo, sn):
-        jpg = _jpg_bytes(pil, 92)
+        jpg=_jpg_bytes(pil,92)
         if jpg:
-            fp = _fingerprint_bytes(jpg)
+            fp=_fingerprint(jpg)
             if fp not in ss.seen_hashes:
                 ss.photos_to_append.append(jpg)
                 ss.seen_hashes.add(fp)
@@ -320,92 +275,85 @@ def scan_one_image(pil: Image.Image, fonte: str) -> Dict:
     return {"modelo": (modelo or ""), "sn": (sn or ""), "mac": (mac or ""), "fonte": fonte}
 
 def add_scanned_item(item: Dict):
-    k = (item.get("modelo",""), item.get("sn",""), item.get("mac",""))
-    current = {(e.get("modelo",""), e.get("sn",""), e.get("mac","")) for e in ss.scanned_items}
-    if k not in current:
-        ss.scanned_items.append(item)
+    k=(item.get("modelo",""), item.get("sn",""), item.get("mac",""))
+    current={(e.get("modelo",""), e.get("sn",""), e.get("mac","")) for e in ss.scanned_items}
+    if k not in current: ss.scanned_items.append(item)
 
 def push_to_textarea_from_items():
     linhas, seen = [], set()
     for it in ss.scanned_items:
-        sn = (it.get("sn") or "").strip()
+        sn=(it.get("sn") or "").strip()
         if not sn: continue
-        model = (it.get("modelo") or "").strip()
-        line = f"{model}  S/N {sn}" if model else f"{sn}"
-        if line not in seen:
-            linhas.append(line); seen.add(line)
-    exist = [ln.strip() for ln in (ss.seriais_texto or "").splitlines() if ln.strip()]
-    all_lines, seen2 = [], set()
+        model=(it.get("modelo") or "").strip()
+        line=f"{model}  S/N {sn}" if model else f"{sn}"
+        if line not in seen: linhas.append(line); seen.add(line)
+    exist=[ln.strip() for ln in (ss.seriais_texto or "").splitlines() if ln.strip()]
+    all_lines, seen2=[], set()
     for ln in exist + linhas:
-        if ln not in seen2:
-            all_lines.append(ln); seen2.add(ln)
-    ss.seriais_texto = "\n".join(all_lines)
+        if ln not in seen2: all_lines.append(ln); seen2.add(ln)
+    ss.seriais_texto="\n".join(all_lines)
 
-# -------------------- PDF helpers --------------------
+# ---- PDF helpers ----
 def search_once(page, texts):
-    if isinstance(texts, str): texts = [texts]
+    if isinstance(texts,str): texts=[texts]
     for t in texts:
-        rects = page.search_for(t)
-        if rects: return rects[0]
+        r=page.search_for(t)
+        if r: return r[0]
     return None
-
-def search_all(page, text): return page.search_for(text)
 
 def insert_right_of(page, labels, content, dx=0, dy=0, fontsize=10):
     if not content: return
-    r = search_once(page, labels)
+    r=search_once(page, labels)
     if not r: return
-    x = r.x1 + dx; y = r.y0 + r.height/1.5 + dy
-    page.insert_text((x, y), str(content), fontsize=fontsize)
-
-def insert_signature(page, label, png_bytes: Optional[bytes], rel_rect):
-    """Insere PNG (RGBA respeita o alpha; RGB fica chapado)."""
-    if not png_bytes: return
-    r = search_once(page, label)
-    if not r: return
-    rect = fitz.Rect(r.x0 + rel_rect[0], r.y1 + rel_rect[1], r.x0 + rel_rect[2], r.y1 + rel_rect[3])
-    page.insert_image(rect, stream=png_bytes, keep_proportion=True)
+    x=r.x1+dx; y=r.y0+r.height/1.5+dy
+    page.insert_text((x,y), str(content), fontsize=fontsize)
 
 def descricao_block(seriais: str, atividade: str, info: str) -> str:
-    partes = []
+    parts=[]
     if seriais and seriais.strip():
-        linhas = [ln.strip() for ln in seriais.splitlines() if ln.strip()]
-        partes.append("SERIAIS:\n" + "\n".join(f"- {ln}" for ln in linhas))
-    if atividade and atividade.strip():
-        partes.append("ATIVIDADE:\n" + atividade.strip())
-    if info and info.strip():
-        partes.append("INFORMAÇÕES ADICIONAIS:\n" + info.strip())
-    return "\n\n".join(partes) if partes else ""
+        linhas=[ln.strip() for ln in seriais.splitlines() if ln.strip()]
+        parts.append("SERIAIS:\n" + "\n".join(f"- {ln}" for ln in linhas))
+    if atividade and atividade.strip(): parts.append("ATIVIDADE:\n"+atividade.strip())
+    if info and info.strip(): parts.append("INFORMAÇÕES ADICIONAIS:\n"+info.strip())
+    return "\n\n".join(parts) if parts else ""
 
 def insert_descricao_autofit(page, label, text):
     if not text: return
-    r = search_once(page, label)
+    r=search_once(page, label)
     if not r: return
-    n = len(text.splitlines())
-    if n <= 15: fontsize, height = 10, 240
-    elif n <= 22: fontsize, height = 9, 300
-    elif n <= 30: fontsize, height = 8, 360
-    else: fontsize, height = 7, 420
-    rect = fitz.Rect(r.x0, r.y1 + 20, r.x0 + 540, r.y1 + 20 + height)
-    page.insert_textbox(rect, text, fontsize=fontsize, align=0)
+    n=len(text.splitlines())
+    if n<=15: fs,h=10,240
+    elif n<=22: fs,h=9,300
+    elif n<=30: fs,h=8,360
+    else: fs,h=7,420
+    rect=fitz.Rect(r.x0, r.y1+20, r.x0+540, r.y1+20+h)
+    page.insert_textbox(rect, text, fontsize=fs, align=0)
 
-# =======================
-#   INTERFACE (1 página)
-# =======================
+def insert_signature_png(page, label, sig_png_bytes: Optional[bytes], rel_rect):
+    """
+    Insere a assinatura no PDF.
+    A assinatura já é PNG RGB (fundo branco) — sem alpha, sem risco de fundo preto.
+    """
+    if not sig_png_bytes: return
+    r=search_once(page, label)
+    if not r: return
+    rect = fitz.Rect(r.x0+rel_rect[0], r.y1+rel_rect[1], r.x0+rel_rect[2], r.y1+rel_rect[3])
+    page.insert_image(rect, stream=sig_png_bytes, keep_proportion=True)
 
-# ---- Seção 1: Scanner ----
+# ===================== UI (1 página) =====================
+
+# --- Scanner ---
 with st.expander("🧪 Scanner de S/N (Câmera • Fotos • PDF)", expanded=True):
     with st.form("scanner_form"):
-        cam_in  = st.camera_input("📸 Tirar foto (abre câmera)", key="cam_in")
+        cam_in = st.camera_input("📸 Tirar foto (abre câmera)", key="cam_in")
         imgs_in = st.file_uploader("📎 Enviar foto(s) de etiquetas", type=["jpg","jpeg","png","webp"],
                                    accept_multiple_files=True, key="imgs_in")
-        pdf_in  = st.file_uploader("📎 Enviar RAT (PDF) para extrair fotos de etiquetas", type=["pdf"], key="pdf_in")
-
-        c1, c2, c3, c4 = st.columns([1,1,1,2])
-        with c1: btn_cam  = st.form_submit_button("➕ Ler CÂMERA")
-        with c2: btn_imgs = st.form_submit_button("➕ Ler FOTOS")
-        with c3: btn_pdf  = st.form_submit_button("➕ Ler PDF")
-        with c4: btn_push = st.form_submit_button("🡓 Jogar S/N no campo de seriais")
+        pdf_in = st.file_uploader("📎 Enviar RAT (PDF) para extrair fotos de etiquetas", type=["pdf"], key="pdf_in")
+        c1,c2,c3,c4 = st.columns([1,1,1,2])
+        with c1: btn_cam = st.form_submit_button("➕ Ler CÂMERA")
+        with c2: btn_imgs= st.form_submit_button("➕ Ler FOTOS")
+        with c3: btn_pdf = st.form_submit_button("➕ Ler PDF")
+        with c4: btn_push= st.form_submit_button("🡓 Jogar S/N")
 
     if btn_cam and ss.get("cam_in") is not None:
         try:
@@ -413,50 +361,42 @@ with st.expander("🧪 Scanner de S/N (Câmera • Fotos • PDF)", expanded=Tru
             add_scanned_item(scan_one_image(pil, "camera"))
             st.success("Foto da CÂMERA lida.")
         except Exception as e:
-            st.warning(f"Não consegui ler a foto da câmera: {e}")
+            st.warning(f"Falha câmera: {e}")
 
     if btn_imgs and ss.get("imgs_in"):
         for f in ss.imgs_in:
             try:
-                raw = f.getvalue()
-                fp = _fingerprint_bytes(raw)
-                if fp in ss.seen_hashes:
-                    continue
-                pil = Image.open(BytesIO(raw)).convert("RGB")
+                raw=f.getvalue(); fp=_fingerprint(raw)
+                if fp in ss.seen_hashes: continue
+                pil=Image.open(BytesIO(raw)).convert("RGB")
                 add_scanned_item(scan_one_image(pil, f.name))
                 ss.seen_hashes.add(fp)
             except Exception as e:
-                st.warning(f"Não consegui ler uma foto: {e}")
+                st.warning(f"Falha foto: {e}")
         st.success("FOTOS lidas.")
 
     if btn_pdf and ss.get("pdf_in") is not None:
         try:
-            doc = fitz.open(stream=ss.pdf_in.read(), filetype="pdf")
-            for pno, page in enumerate(doc):
-                for idx, info in enumerate(page.get_images(full=True)):
-                    base = doc.extract_image(info[0])
-                    raw = base["image"]
-                    fp = _fingerprint_bytes(raw)
-                    if fp in ss.seen_hashes:
-                        continue
-                    pil = Image.open(BytesIO(raw)).convert("RGB")
+            doc=fitz.open(stream=ss.pdf_in.read(), filetype="pdf")
+            for pno,page in enumerate(doc):
+                for idx,info in enumerate(page.get_images(full=True)):
+                    base=doc.extract_image(info[0]); raw=base["image"]; fp=_fingerprint(raw)
+                    if fp in ss.seen_hashes: continue
+                    pil=Image.open(BytesIO(raw)).convert("RGB")
                     add_scanned_item(scan_one_image(pil, f"pdf:p{pno}_img{idx}"))
                     ss.seen_hashes.add(fp)
             st.success("PDF lido.")
         except Exception as e:
-            st.warning(f"Falha ao analisar PDF: {e}")
+            st.warning(f"Falha PDF: {e}")
 
     if btn_push:
         push_to_textarea_from_items()
-        st.success("Seriais enviados para o campo.")
+        st.success("Seriais jogados para o campo.")
 
     st.subheader("Itens scaneados (edite se necessário)")
     if ss.scanned_items:
         edited = st.data_editor(
-            ss.scanned_items,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="editor_scans",
+            ss.scanned_items, num_rows="dynamic", use_container_width=True, key="editor_scans",
             column_config={
                 "modelo": st.column_config.TextColumn("Modelo", width="medium"),
                 "sn":     st.column_config.TextColumn("S/N", width="large"),
@@ -466,70 +406,50 @@ with st.expander("🧪 Scanner de S/N (Câmera • Fotos • PDF)", expanded=Tru
         )
         ss.scanned_items = edited
 
-    cA, cB = st.columns(2)
+    cA,cB = st.columns(2)
     with cA:
-        if st.button("🧹 Limpar ITENS (scanner)"):
-            ss.scanned_items = []
-            st.info("Itens limpos.")
+        if st.button("🧹 Limpar ITENS"):
+            ss.scanned_items=[]; st.info("Itens limpos.")
     with cB:
         if st.button("🧹 Limpar FOTOS anexas"):
-            ss.photos_to_append = []
-            ss.seen_hashes = set()
-            st.info("Fotos limpas.")
+            ss.photos_to_append=[]; ss.seen_hashes=set(); st.info("Fotos limpas.")
 
-# ---- Seção 2: Assinaturas ----
+# --- Assinaturas ---
 with st.expander("✍️ Assinaturas (Técnico e Cliente)", expanded=True):
-    st.checkbox("Salvar com fundo transparente (recomendado)", key="assinatura_transparente",
-                value=ss.assinatura_transparente)
+    st.caption("O PDF recebe a assinatura com fundo branco (sem alpha). Isso elimina fundo preto em qualquer viewer.")
 
     st.write("Assinatura do TÉCNICO")
     tec_canvas = st_canvas(
         fill_color="rgba(0,0,0,0)", stroke_width=3, stroke_color="#000000",
-        background_color="rgba(0,0,0,0)",
-        width=800, height=180,
-        drawing_mode="freedraw",
-        key="sig_tec_canvas",
-        update_streamlit=True,
-        display_toolbar=True,
+        background_color="rgba(0,0,0,0)", width=800, height=180,
+        drawing_mode="freedraw", key="sig_tec_canvas", update_streamlit=True, display_toolbar=True,
     )
     if st.button("💾 Salvar assinatura do TÉCNICO"):
         arr = getattr(tec_canvas, "image_data", None)
-        img = signature_from_canvas(arr, transparente=ss.assinatura_transparente) if arr is not None else None
-        ss.sig_tec_png = to_png_bytes(img, transparente=ss.assinatura_transparente)
-        if ss.sig_tec_png:
-            st.success("Assinatura do técnico salva.")
-        else:
-            st.warning("Nada para salvar (assine no quadro e tente novamente).")
+        img = signature_from_canvas(arr) if arr is not None else None
+        ss.sig_tec_png = to_png_bytes(img)
+        st.success("Assinatura do técnico salva." if ss.sig_tec_png else "Nada para salvar.")
 
     st.write("---")
     st.write("Assinatura do CLIENTE")
     cli_canvas = st_canvas(
         fill_color="rgba(0,0,0,0)", stroke_width=3, stroke_color="#000000",
-        background_color="rgba(0,0,0,0)",
-        width=800, height=180,
-        drawing_mode="freedraw",
-        key="sig_cli_canvas",
-        update_streamlit=True,
-        display_toolbar=True,
+        background_color="rgba(0,0,0,0)", width=800, height=180,
+        drawing_mode="freedraw", key="sig_cli_canvas", update_streamlit=True, display_toolbar=True,
     )
     if st.button("💾 Salvar assinatura do CLIENTE"):
         arr = getattr(cli_canvas, "image_data", None)
-        img = signature_from_canvas(arr, transparente=ss.assinatura_transparente) if arr is not None else None
-        ss.sig_cli_png = to_png_bytes(img, transparente=ss.assinatura_transparente)
-        if ss.sig_cli_png:
-            st.success("Assinatura do cliente salva.")
-        else:
-            st.warning("Nada para salvar (assine no quadro e tente novamente).")
+        img = signature_from_canvas(arr) if arr is not None else None
+        ss.sig_cli_png = to_png_bytes(img)
+        st.success("Assinatura do cliente salva." if ss.sig_cli_png else "Nada para salvar.")
 
     if st.button("🧹 Limpar assinaturas salvas"):
-        ss.sig_tec_png = None
-        ss.sig_cli_png = None
-        st.info("Assinaturas removidas.")
+        ss.sig_tec_png=None; ss.sig_cli_png=None; st.info("Assinaturas removidas.")
 
-# ---- Seção 3: Dados & PDF ----
+# --- Dados & PDF ---
 with st.expander("🧾 Dados do RAT & Geração do PDF", expanded=True):
     st.subheader("1) Chamado e Agenda")
-    c1, c2 = st.columns(2)
+    c1,c2 = st.columns(2)
     with c1:
         st.date_input("Data do atendimento", value=ss.data_atend, key="data_atend")
         st.time_input("Hora início", value=ss.hora_ini, key="hora_ini")
@@ -541,6 +461,7 @@ with st.expander("🧾 Dados do RAT & Geração do PDF", expanded=True):
         st.text_input("Distância (KM)", value=ss.distancia_km, key="distancia_km")
         st.text_input("Cliente / Razão Social", value=ss.cliente_nome, key="cliente_nome")
         st.text_input("Telefone (contato)", value=ss.contato_tel, key="contato_tel")
+
     st.text_input("Endereço", value=ss.endereco, key="endereco")
     st.text_input("Bairro", value=ss.bairro, key="bairro")
     st.text_input("Cidade", value=ss.cidade, key="cidade")
@@ -560,12 +481,12 @@ with st.expander("🧾 Dados do RAT & Geração do PDF", expanded=True):
     st.checkbox("Anexar fotos com S/N ao PDF", key="anexar_fotos", value=ss.anexar_fotos)
 
     if st.button("🧾 Gerar PDF preenchido"):
-        # Carrega PDF base
         try:
             base = load_pdf_bytes(PDF_BASE_PATH)
         except FileNotFoundError:
             st.error(f"Arquivo '{PDF_BASE_PATH}' não encontrado.")
             st.stop()
+
         try:
             doc = fitz.open(stream=base, filetype="pdf")
             page = doc[0]
@@ -576,57 +497,69 @@ with st.expander("🧾 Dados do RAT & Geração do PDF", expanded=True):
             insert_right_of(page, ["Bairro:", "BAIRRO:"],     ss.get("bairro",""), 6, 1)
             insert_right_of(page, ["Cidade:", "CIDADE:"],     ss.get("cidade",""), 6, 1)
             insert_right_of(page, ["Contato:"],               ss.get("contato_nome",""), 6, 1)
-
-            # RG do contato (posição simples à direita de "Contato")
-            r_cont = search_once(page, ["Contato:"])
+            # RG do contato (posicionado à direita de "Contato")
+            r_cont = page.search_for("Contato:")
             if r_cont and ss.get("contato_rg",""):
-                x = r_cont.x1 + 40; y = r_cont.y0 + r_cont.height/1.5 + 6
-                page.insert_text((x, y), str(ss["contato_rg"]), fontsize=10)
-
+                r = r_cont[0]; x = r.x1 + 40; y = r.y0 + r.height/1.5 + 6
+                page.insert_text((x,y), str(ss["contato_rg"]), fontsize=10)
             insert_right_of(page, ["Telefone:", "TELEFONE:"], normalize_phone(ss.get("contato_tel","")), 6, 1)
 
             # Datas/Horas/KM
-            insert_right_of(page, ["Data do atendimento:", "Data do Atendimento:"],
-                            ss["data_atend"].strftime("%d/%m/%Y"), -90, 10)
-            insert_right_of(page, ["Hora Inicio:", "Hora Início:", "Hora inicio:"],
-                            ss["hora_ini"].strftime("%H:%M"), 0, 3)
-            insert_right_of(page, ["Hora Termino:", "Hora Término:", "Hora termino:"],
-                            ss["hora_fim"].strftime("%H:%M"), 0, 3)
-            insert_right_of(page, ["Distancia (KM) :", "Distância (KM) :"],
-                            str(ss.get("distancia_km","")), 0, 3)
+            insert_right_of(page, ["Data do atendimento:", "Data do Atendimento:"], ss["data_atend"].strftime("%d/%m/%Y"), -90, 10)
+            insert_right_of(page, ["Hora Inicio:", "Hora Início:", "Hora inicio:"], ss["hora_ini"].strftime("%H:%M"), 0, 3)
+            insert_right_of(page, ["Hora Termino:", "Hora Término:", "Hora termino:"], ss["hora_fim"].strftime("%H:%M"), 0, 3)
+            insert_right_of(page, ["Distancia (KM) :", "Distância (KM) :"], str(ss.get("distancia_km","")), 0, 3)
 
             # Descrição
-            bloco = descricao_block(
-                ss.get("seriais_texto_area",""),
-                ss.get("atividade_txt",""),
-                ss.get("info_txt","")
-            )
+            def descricao_block(seriais: str, atividade: str, info: str) -> str:
+                parts=[]
+                if seriais and seriais.strip():
+                    linhas=[ln.strip() for ln in seriais.splitlines() if ln.strip()]
+                    parts.append("SERIAIS:\n" + "\n".join(f"- {ln}" for ln in linhas))
+                if atividade and atividade.strip(): parts.append("ATIVIDADE:\n"+atividade.strip())
+                if info and info.strip(): parts.append("INFORMAÇÕES ADICIONAIS:\n"+info.strip())
+                return "\n\n".join(parts) if parts else ""
+            bloco = descricao_block(ss.get("seriais_texto_area",""), ss.get("atividade_txt",""), ss.get("info_txt",""))
+
+            def insert_descricao_autofit(page, label, text):
+                if not text: return
+                r=page.search_for(label[0]) or []
+                r = r[0] if r else None
+                if not r: return
+                n=len(text.splitlines())
+                if n<=15: fs,h=10,240
+                elif n<=22: fs,h=9,300
+                elif n<=30: fs,h=8,360
+                else: fs,h=7,420
+                rect=fitz.Rect(r.x0, r.y1+20, r.x0+540, r.y1+20+h)
+                page.insert_textbox(rect, text, fontsize=fs, align=0)
+
             insert_descricao_autofit(page, ["DESCRIÇÃO DE ATENDIMENTO","DESCRICAO DE ATENDIMENTO"], bloco)
 
-            # Assinaturas (PNG salvos — RGBA respeita alpha; RGB branco)
-            insert_signature(page, ["ASSINATURA:", "Assinatura:"], ss.get("sig_tec_png"),
-                             (110 - 2*CM, 0 - 1*CM, 330 - 2*CM, 54 - 1*CM))
-            insert_signature(page, ["DATA CARIMBO / ASSINATURA", "ASSINATURA CLIENTE", "CLIENTE"],
-                             ss.get("sig_cli_png"), (110, 12 - 3.5*CM, 430, 94 - 3.5*CM))
+            # Assinaturas — PNG RGB (sem alpha)
+            insert_signature_png(page, ["ASSINATURA:", "Assinatura:"], ss.get("sig_tec_png"),
+                                 (110 - 2*CM, 0 - 1*CM, 330 - 2*CM, 54 - 1*CM))
+            insert_signature_png(page, ["DATA CARIMBO / ASSINATURA", "ASSINATURA CLIENTE", "CLIENTE"],
+                                 ss.get("sig_cli_png"), (110, 12 - 3.5*CM, 430, 94 - 3.5*CM))
 
-            # Nº CHAMADO
+            # Nº chamado
             insert_right_of(page, [" Nº CHAMADO ", "Nº CHAMADO", "No CHAMADO"], ss.get("num_chamado",""),
                             dx=-(2*CM), dy=10)
 
-            # Anexar fotos
+            # Fotos anexas
             if ss.get("anexar_fotos", True) and ss.photos_to_append:
                 for img_bytes in ss.photos_to_append:
                     p = doc.new_page()
                     pil = Image.open(BytesIO(img_bytes)).convert("RGB")
                     W,H = pil.size; w,h = p.rect.width, p.rect.height
-                    margin = 36; max_w, max_h = w-2*margin, h-2*margin
-                    scale = min(max_w/W, max_h/H); new_w, new_h = int(W*scale), int(H*scale)
-                    x0 = (w-new_w)/2; y0 = (h-new_h)/2
-                    rect = fitz.Rect(x0, y0, x0+new_w, y0+new_h)
-                    b = BytesIO(); pil.save(b, format="JPEG", quality=92)
+                    margin=36; max_w, max_h = w-2*margin, h-2*margin
+                    scale=min(max_w/W, max_h/H); new_w, new_h = int(W*scale), int(H*scale)
+                    x0=(w-new_w)/2; y0=(h-new_h)/2
+                    rect=fitz.Rect(x0,y0,x0+new_w,y0+new_h)
+                    b=BytesIO(); pil.save(b, format="JPEG", quality=92)
                     p.insert_image(rect, stream=b.getvalue())
 
-            out = BytesIO(); doc.save(out); doc.close()
+            out=BytesIO(); doc.save(out); doc.close()
             st.success("PDF gerado!")
             st.download_button(
                 "⬇️ Baixar RAT preenchido",
