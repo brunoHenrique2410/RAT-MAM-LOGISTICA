@@ -1,8 +1,8 @@
-# app.py — RAT MAM (OCR obrigatório + âncora S/N + edição + preview robusto + fotos no PDF)
+# app.py — RAT MAM (OCR obrigatório + âncora S/N + edição + sem pré-visualização + fotos no PDF)
 from io import BytesIO
 from datetime import date, time
-from typing import List, Dict, Optional, Tuple, Any
-import os, re, base64
+from typing import List, Dict, Optional, Tuple
+import os, re
 
 import streamlit as st
 from PIL import Image, ImageOps, ImageFilter
@@ -122,32 +122,6 @@ def remove_white_to_transparent(img: Image.Image, thresh=245) -> Image.Image:
 def load_pdf_bytes(path: str) -> bytes:
     with open(path, "rb") as f: return f.read()
 
-# ------------- Helpers robustos para preview/sanitização de imagem -------------
-def _to_pil_or_none(obj: Any) -> Optional[Image.Image]:
-    """Tenta converter bytes/bytearray/base64 str/PIL em PIL.Image. Retorna None se não der."""
-    try:
-        if isinstance(obj, Image.Image):
-            return obj
-        if isinstance(obj, (bytes, bytearray)):
-            return Image.open(BytesIO(obj)).convert("RGB")
-        if isinstance(obj, str):
-            try:
-                raw = base64.b64decode(obj, validate=True)
-                return Image.open(BytesIO(raw)).convert("RGB")
-            except Exception:
-                return None
-    except Exception:
-        return None
-    return None
-
-def _save_pil_to_jpeg_bytes(pil: Image.Image) -> Optional[bytes]:
-    try:
-        buf = BytesIO()
-        pil.convert("RGB").save(buf, format="JPEG", quality=92)
-        return buf.getvalue()
-    except Exception:
-        return None
-
 # -------------------- OCR helpers --------------------
 def ocr_text(pil: Image.Image) -> str:
     img = ImageOps.grayscale(pil).filter(ImageFilter.SHARPEN)
@@ -238,6 +212,14 @@ def detect_model(text_upper: str) -> Optional[str]:
     return None
 
 # -------------------- scanner principal --------------------
+def _save_pil_to_jpeg_bytes(pil: Image.Image) -> Optional[bytes]:
+    try:
+        buf = BytesIO()
+        pil.convert("RGB").save(buf, format="JPEG", quality=92)
+        return buf.getvalue()
+    except Exception:
+        return None
+
 def scan_one_image(pil: Image.Image, fonte: str) -> Dict:
     text = ocr_text(pil)
     up = (text or "").upper()
@@ -263,12 +245,11 @@ def scan_one_image(pil: Image.Image, fonte: str) -> Dict:
     macs = REGEX_MAC.findall(text or "")
     mac = macs[0] if macs else ""
 
+    # salva a foto apenas se há S/N válido
     if is_valid_sn(modelo, sn):
-        jpeg_bytes = _save_pil_to_jpeg_bytes(pil)
-        if jpeg_bytes:
-            st.session_state.photos_to_append.append(jpeg_bytes)
-        else:
-            st.warning("Não consegui salvar a foto capturada para anexar (conversão JPEG falhou).")
+        jpg = _save_pil_to_jpeg_bytes(pil)
+        if jpg:
+            st.session_state.photos_to_append.append(jpg)
 
     return {"modelo": (modelo or ""), "sn": (sn or ""), "mac": (mac or ""), "fonte": fonte}
 
@@ -378,32 +359,6 @@ st.session_state.seriais_texto = st.text_area(
     height=200,
     key="seriais_texto_area"
 )
-
-# --------- PRÉ‑VISUALIZAÇÃO das fotos (sanitizada) ----------
-if st.session_state.photos_to_append:
-    clean_list: List[bytes] = []
-    preview_imgs: List[Image.Image] = []
-    for idx, obj in enumerate(st.session_state.photos_to_append):
-        pil_img = _to_pil_or_none(obj)
-        if pil_img is not None:
-            preview_imgs.append(pil_img)
-            jpg = _save_pil_to_jpeg_bytes(pil_img)
-            if jpg:
-                clean_list.append(jpg)
-            else:
-                st.warning(f"Não consegui preparar a foto {idx+1} para anexar (JPEG).")
-        else:
-            st.warning(f"Uma foto na posição {idx+1} não pôde ser lida e será ignorada.")
-    st.session_state.photos_to_append = clean_list
-
-    if preview_imgs:
-        st.write("**Pré‑visualização das fotos que irão para o PDF:**")
-        cols = st.columns(3)
-        for i, pil_img in enumerate(preview_imgs):
-            with cols[i % 3]:
-                st.image(pil_img, caption=f"Foto {i+1}", use_container_width=True)
-    else:
-        st.info("Nenhuma foto válida para pré‑visualização no momento.")
 
 # Assinaturas, técnico e descrição
 st.subheader("Técnico e Assinaturas")
@@ -527,7 +482,7 @@ if st.button("🧾 Gerar PDF preenchido"):
 
         insert_right_of(page, [" Nº CHAMADO ", "Nº CHAMADO", "No CHAMADO"], st.session_state.get("num_chamado",""), dx=-(2*CM), dy=10)
 
-        # fotos
+        # fotos (sem pre-visualização)
         if st.session_state.anexar_fotos and st.session_state.photos_to_append:
             for img_bytes in st.session_state.photos_to_append:
                 p = doc.new_page()
