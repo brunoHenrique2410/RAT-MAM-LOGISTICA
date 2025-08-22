@@ -1,5 +1,5 @@
-# app.py — RAT MAM (scanner + regex por modelo + âncoras + assinatura sem fundo)
-# Requisitos em requirements.txt ao final desta resposta.
+# app.py — RAT MAM (st.camera_input + scanner + regex por modelo + âncoras + assinatura sem fundo)
+# Requisitos no final (requirements.txt).
 
 from io import BytesIO
 from datetime import date, time
@@ -12,14 +12,14 @@ import numpy as np
 import fitz  # PyMuPDF
 from streamlit_drawable_canvas import st_canvas
 
-# --- libs opcionais para scanner ---
+# -------- libs opcionais para scanner (o app funciona mesmo sem todas) --------
 try:
     from pyzbar.pyzbar import decode as zbar_decode  # códigos 1D/2D
 except Exception:
     zbar_decode = None
 
 try:
-    import zxingcpp  # leitura robusta de códigos
+    import zxingcpp  # leitura robusta de códigos (1D/2D)
 except Exception:
     zxingcpp = None
 
@@ -39,7 +39,9 @@ st.caption("Scanner adiciona seriais automaticamente (câmera, fotos ou PDF). As
 
 # ---------------- Estado ----------------
 if "scanned_items" not in st.session_state:
-    st.session_state.scanned_items = []  # {modelo, sn, mac, fonte}
+    st.session_state.scanned_items = []  # cada item: {modelo, sn, mac, fonte}
+if "photos_to_append" not in st.session_state:
+    st.session_state.photos_to_append = []  # bytes das fotos com S/N válido
 if "seriais_texto" not in st.session_state:
     st.session_state.seriais_texto = ""
 if "atividade_txt" not in st.session_state:
@@ -63,7 +65,7 @@ EQUIP_KEYWORDS = {
     "OMADA": re.compile(r"\bOMADA\b", re.I),
 }
 
-# --- Regex de serial por modelo (ajuste conforme seu parque) ---
+# --- Regex de serial por modelo (calibráveis) ---
 SERIAL_REGEX = {
     "ER605":             re.compile(r"^[0-9A-Z\-]{10,16}$", re.I),
     "ER7206":            re.compile(r"^[0-9A-Z\-]{10,16}$", re.I),
@@ -176,9 +178,13 @@ def ocr_image(pil: Image.Image) -> str:
         pil = pil.resize((w * 2, h * 2))
     gray = ImageOps.grayscale(pil)
     gray = gray.filter(ImageFilter.SHARPEN)
-    bw = gray.point(lambda x: 255 if x > 160 else 0, mode="1").convert("L")
+    bw = gray.point(lambda x: 255 if x > 165 else 0, mode="1").convert("L")
     try:
-        return pytesseract.image_to_string(bw, lang="eng")
+        # psm 6: bloco de texto; whitelist evita ruído de símbolos
+        return pytesseract.image_to_string(
+            bw, lang="eng",
+            config="--psm 6 --oem 3 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/:"
+        )
     except Exception:
         return ""
 
@@ -207,10 +213,11 @@ def read_barcodes(pil: Image.Image) -> List[str]:
 
 def detect_from_pil(pil: Image.Image, fonte: str) -> List[Dict]:
     found = []
-    # 1) códigos
+
+    # 1) códigos de barras/QR
     bar_vals = read_barcodes(pil)
 
-    # 2) OCR imagem inteira + quadrantes (fallback)
+    # 2) OCR (imagem inteira + quadrantes, se necessário)
     text = ocr_image(pil)
     if (not text) and (pil.width > 800 and pil.height > 800):
         W, H = pil.size
@@ -219,7 +226,7 @@ def detect_from_pil(pil: Image.Image, fonte: str) -> List[Dict]:
 
     up = (text or "").upper()
 
-    # modelo (heurística por palavras‑chave)
+    # modelo por keywords
     model = None
     for name, rx in EQUIP_KEYWORDS.items():
         if name in ("TP-LINK", "OMADA"):
@@ -228,16 +235,26 @@ def detect_from_pil(pil: Image.Image, fonte: str) -> List[Dict]:
             model = name
             break
 
-    # seriais & macs
+    # coletores
     sns = [clean_sn(m.group(0)) for m in REGEX_SN.finditer(text or "")]
     macs = [m.group(0) for m in REGEX_MAC.finditer(text or "")]
 
+    # não confundir MAC com SN
+    def looks_like_mac(s: str) -> bool:
+        return bool(re.fullmatch(r"(?:[0-9A-F]{2}[:-]){5}[0-9A-F]{2}", s, re.I))
+    sns = [s for s in sns if not looks_like_mac(s)]
+
     # barcode que parece serial
     for b in bar_vals:
-        if re.fullmatch(r"[A-Z0-9\-]{6,}", b, re.I):
+        if re.fullmatch(r"[A-Z0-9\-]{6,}", b, re.I) and not looks_like_mac(b):
             sns.append(b)
 
-    # commit com validação
+    # se não achou SN por S/N, tente tokens longos como fallback
+    if not sns and text:
+        long_tokens = [t for t in re.findall(r"[A-Z0-9\-]{8,}", up) if not looks_like_mac(t)]
+        sns.extend(long_tokens)
+
+    # validação por modelo
     sn_valido = best_sn_for_model(model, sns)
     mac = macs[0] if macs else None
 
@@ -248,10 +265,13 @@ def detect_from_pil(pil: Image.Image, fonte: str) -> List[Dict]:
             "mac": mac,
             "fonte": fonte
         })
+        # anexa foto ao PDF só se houver SN válido
+        if sn_valido:
+            buf = BytesIO(); pil.save(buf, format="PNG")
+            st.session_state.photos_to_append.append(buf.getvalue())
     return found
 
 def add_scanned(items: List[Dict]):
-    # evita dup: chave por (modelo, sn, mac)
     keyset = {(e["modelo"], e.get("sn") or "", e.get("mac") or "") for e in st.session_state.scanned_items}
     for it in items:
         k = (it["modelo"], it.get("sn") or "", it.get("mac") or "")
@@ -260,7 +280,6 @@ def add_scanned(items: List[Dict]):
             keyset.add(k)
 
 def push_scanned_to_textarea():
-    # gera linhas no padrão "Modelo – S/N XXXXX" (só se passar na regex)
     linhas = []
     for it in st.session_state.scanned_items:
         sn = it.get("sn")
@@ -272,7 +291,6 @@ def push_scanned_to_textarea():
                 linhas.append(f"{modelo}  S/N {sn}")
             else:
                 linhas.append(f"{sn}")
-    # mantém o que já havia + adiciona novos, sem duplicar
     exist = [ln.strip() for ln in (st.session_state.seriais_texto or "").splitlines() if ln.strip()]
     all_lines, seen = [], set()
     for ln in exist + linhas:
@@ -302,10 +320,10 @@ with st.form("rat_mam"):
     contato_tel  = st.text_input("Contato (Telefone)")
 
     st.subheader("3) Seriais (Scanner + Texto)")
-    st.markdown("**Scanner** – use a câmera ou envie fotos/PDF; os seriais válidos (regex por modelo) serão adicionados abaixo.")
+    st.markdown("Use a **câmera** ou **envie fotos/PDF**; os S/N válidos (regex por modelo) serão adicionados abaixo.")
 
-    # câmera (mobile/desktop)
-    cam_img = st.camera_input("📷 Tirar foto da etiqueta (opcional)")
+    # câmera (abre a câmera do dispositivo no mobile/desktop suportado)
+    cam_img = st.camera_input("📸 Tirar foto agora (abre a câmera)")
     if cam_img is not None:
         try:
             pil = Image.open(cam_img).convert("RGB")
@@ -316,7 +334,7 @@ with st.form("rat_mam"):
             st.warning(f"Falha ao processar imagem da câmera: {e}")
 
     # upload de múltiplas fotos
-    up_imgs = st.file_uploader("📎 Enviar foto(s) de etiqueta(s)", type=["jpg", "jpeg", "png", "webp"], accept_multiple_files=True)
+    up_imgs = st.file_uploader("📎 Enviar foto(s) de etiqueta(s)", type=["jpg","jpeg","png","webp"], accept_multiple_files=True)
     if up_imgs:
         for f in up_imgs:
             try:
@@ -351,7 +369,7 @@ with st.form("rat_mam"):
         st.dataframe(enriched, use_container_width=True, height=240)
 
     # área de seriais (editável)
-    seriais_texto = st.text_area(
+    seriais_texto_area = st.text_area(
         "Seriais (um por linha) — o scanner adiciona aqui automaticamente",
         value=st.session_state.seriais_texto,
         height=200,
@@ -363,7 +381,6 @@ with st.form("rat_mam"):
         if st.form_submit_button("➕ Adicionar detecções ao campo de seriais", use_container_width=True):
             st.session_state.seriais_texto = st.session_state.get("seriais_texto_area", st.session_state.seriais_texto)
             push_scanned_to_textarea()
-            st.session_state.seriais_texto = st.session_state.seriais_texto  # garante persistência
             st.success("Detecções adicionadas ao campo de seriais.")
     with c4:
         if st.form_submit_button("🗑️ Limpar detecções (scanner)", use_container_width=True):
@@ -401,6 +418,8 @@ with st.form("rat_mam"):
         display_toolbar=True,
     )
 
+    anexar_fotos = st.checkbox("Anexar as fotos onde o S/N foi reconhecido ao final do PDF", value=True)
+
     submitted = st.form_submit_button("🧾 Gerar PDF preenchido", use_container_width=True)
 
 # campos de descrição (fora do form para não sumirem no submit)
@@ -408,10 +427,17 @@ st.subheader("5) Descrição de Atendimento")
 st.session_state.atividade_txt = st.text_area("Atividade (texto livre do técnico)", height=80, key="atividade_txt")
 st.session_state.info_txt = st.text_area("Informações adicionais (opcional)", height=60, key="info_txt")
 
+# preview das fotos que irão para o PDF
+if st.session_state.photos_to_append:
+    st.write("**Fotos que serão anexadas ao PDF:**")
+    cols = st.columns(3)
+    for i, b in enumerate(st.session_state.photos_to_append):
+        with cols[i % 3]:
+            st.image(b, caption=f"Foto {i+1}", use_container_width=True)
+
 # ---------------- Helpers PDF ----------------
-def build_descricao_block() -> str:
+def build_descricao_block(seriais_raw: str) -> str:
     partes = []
-    seriais_raw = st.session_state.get("seriais_texto_area", st.session_state.seriais_texto)
     if seriais_raw and seriais_raw.strip():
         seriais = [ln.strip() for ln in seriais_raw.splitlines() if ln.strip()]
         if seriais:
@@ -423,10 +449,7 @@ def build_descricao_block() -> str:
     return "\n\n".join(partes) if partes else ""
 
 def insert_descricao_autofit(page, label, text):
-    """Insere a descrição com auto-ajuste:
-       - fonte 10 para até ~15 linhas; depois reduz para 9/8/7
-       - aumenta a altura da caixa se necessário
-    """
+    """Insere a descrição com auto-ajuste: fonte e altura crescem/reduzem conforme nº de linhas."""
     if not text:
         return
     r = search_once(page, label)
@@ -435,38 +458,24 @@ def insert_descricao_autofit(page, label, text):
     linhas = [ln for ln in text.splitlines()]
     n = len(linhas)
 
-    # heurística de fonte/altura
     if n <= 15:
         fontsize = 10; height = 240
     elif n <= 22:
-        fontsize = 9; height = 300
+        fontsize = 9;  height = 300
     elif n <= 30:
-        fontsize = 8; height = 360
+        fontsize = 8;  height = 360
     else:
-        fontsize = 7; height = 420  # muitos seriais
+        fontsize = 7;  height = 420
 
     rect = fitz.Rect(r.x0 + 0, r.y1 + 20, r.x0 + 540, r.y1 + 20 + height)
     page.insert_textbox(rect, text, fontsize=fontsize, align=0)
 
 # ---------------- Geração PDF ----------------
 if submitted:
-    # sincroniza seriais
-    st.session_state.seriais_texto = st.session_state.get("seriais_texto_area", st.session_state.seriais_texto)
-
-    # assinaturas do canvas
-    sigtec_img = np_to_rgba_pil(tec_canvas.image_data if tec_canvas else None)
-    sigcli_img = np_to_rgba_pil(cli_canvas.image_data if cli_canvas else None)
-
-    # pedir base se não existir localmente
-    base_bytes = None
     try:
         base_bytes = load_pdf_bytes(PDF_BASE_PATH)
     except FileNotFoundError:
-        st.warning(f"Arquivo base '{PDF_BASE_PATH}' não encontrado. Envie abaixo.")
-        up = st.file_uploader("📎 Envie o RAT MAM.pdf", type=["pdf"], key="base_pdf_on_submit")
-        if up is not None:
-            base_bytes = up.read()
-    if base_bytes is None:
+        st.error(f"Arquivo base '{PDF_BASE_PATH}' não encontrado. Faça upload como 'RAT MAM.pdf' ao lado do app.")
         st.stop()
 
     try:
@@ -474,16 +483,6 @@ if submitted:
         page = doc[0]
 
         # Topo
-        # (Você pode mover estes campos para dentro do form, se preferir)
-        # Para exemplo, estou deixando como placeholders vazios; ajuste conforme sua coleta real
-        cliente_nome = st.session_state.get("cliente_nome", "")
-        endereco = st.session_state.get("endereco", "")
-        bairro = st.session_state.get("bairro", "")
-        cidade = st.session_state.get("cidade", "")
-        contato_nome = st.session_state.get("contato_nome", "")
-        contato_rg = st.session_state.get("contato_rg", "")
-        contato_tel = st.session_state.get("contato_tel", "")
-
         insert_right_of(page, ["Cliente:", "CLIENTE:"], cliente_nome, dx=6, dy=1)
         insert_right_of(page, ["Endereço:", "ENDEREÇO:"], endereco, dx=6, dy=1)
         insert_right_of(page, ["Bairro:", "BAIRRO:"],     bairro,     dx=6, dy=1)
@@ -502,24 +501,24 @@ if submitted:
 
         insert_right_of(page, ["Telefone:", "TELEFONE:"], normalize_phone(contato_tel), dx=6, dy=1)
 
-        # Datas/Horas/KM — como exemplo, valores default:
+        # Datas/Horas/KM
         insert_right_of(page, ["Data do atendimento:", "Data do Atendimento:"],
-                        date.today().strftime("%d/%m/%Y"), dx=-90, dy=10)
+                        data_atend.strftime("%d/%m/%Y"), dx=-90, dy=10)
         insert_right_of(page, ["Hora Inicio:", "Hora Início:", "Hora inicio:"],
-                        time(8,0).strftime("%H:%M"), dx=0, dy=3)
+                        hora_ini.strftime("%H:%M"), dx=0, dy=3)
         insert_right_of(page, ["Hora Termino:", "Hora Término:", "Hora termino:"],
-                        time(10,0).strftime("%H:%M"), dx=0, dy=3)
+                        hora_fim.strftime("%H:%M"), dx=0, dy=3)
         insert_right_of(page, ["Distancia (KM) :", "Distância (KM) :"],
-                        "", dx=0, dy=3)
+                        str(distancia_km), dx=0, dy=3)
 
-        # Descrição com SERIAIS (auto-fit)
-        bloco_desc = build_descricao_block()
+        # Descrição + seriais
+        seriais_raw = st.session_state.get("seriais_texto_area", st.session_state.seriais_texto)
+        st.session_state.seriais_texto = seriais_raw  # sincroniza
+        bloco_desc = build_descricao_block(seriais_raw)
         insert_descricao_autofit(page, ["DESCRIÇÃO DE ATENDIMENTO","DESCRICAO DE ATENDIMENTO"], bloco_desc)
 
         # Técnico (RG / Nome)
         rg_lbl = find_tecnico_rg_label_rect(page)
-        tec_nome = st.session_state.get("tec_nome", "")
-        tec_rg   = st.session_state.get("tec_rg", "")
         if rg_lbl and tec_rg:
             x_rg = rg_lbl.x1 + (4 * CM)
             y_rg = rg_lbl.y0 + rg_lbl.height/1.5 + 6
@@ -530,6 +529,9 @@ if submitted:
             page.insert_text((x_nome, y_nome), str(tec_nome), fontsize=10)
 
         # Assinaturas (sem fundo no PDF)
+        sigtec_img = np_to_rgba_pil(tec_canvas.image_data if tec_canvas else None)
+        sigcli_img = np_to_rgba_pil(cli_canvas.image_data if cli_canvas else None)
+
         rect_tecnico = (110 - 2*CM, 0 - 1*CM, 330 - 2*CM, 54 - 1*CM)
         insert_signature(page, ["ASSINATURA:", "Assinatura:"], sigtec_img, rect_tecnico)
 
@@ -537,8 +539,29 @@ if submitted:
         insert_signature(page, ["DATA CARIMBO / ASSINATURA", "ASSINATURA CLIENTE", "CLIENTE"],
                          sigcli_img, rect_cliente)
 
-        # Nº CHAMADO — 2 cm mais à esquerda (exemplo: vazio)
-        insert_right_of(page, [" Nº CHAMADO ", "Nº CHAMADO", "No CHAMADO"], "", dx=-(2*CM), dy=10)
+        # Nº CHAMADO — 2 cm mais à esquerda
+        insert_right_of(page, [" Nº CHAMADO ", "Nº CHAMADO", "No CHAMADO"],
+                        num_chamado, dx=-(2*CM), dy=10)
+
+        # Anexar fotos no final (uma por página) somente se checkbox marcado
+        if st.session_state.photos_to_append and st.session_state.photos_to_append and 'anexar_fotos' in locals() and anexar_fotos:
+            for img_bytes in st.session_state.photos_to_append:
+                try:
+                    page_img = doc.new_page()
+                    pil = Image.open(BytesIO(img_bytes)).convert("RGB")
+                    W, H = pil.size
+                    page_w, page_h = page_img.rect.width, page_img.rect.height
+                    margin = 36  # ~0.5"
+                    max_w, max_h = page_w - 2*margin, page_h - 2*margin
+                    scale = min(max_w / W, max_h / H)
+                    new_w, new_h = int(W*scale), int(H*scale)
+                    x0 = (page_w - new_w) / 2
+                    y0 = (page_h - new_h) / 2
+                    rect = fitz.Rect(x0, y0, x0 + new_w, y0 + new_h)
+                    b = BytesIO(); pil.save(b, format="JPEG", quality=92)
+                    page_img.insert_image(rect, stream=b.getvalue())
+                except Exception as e:
+                    st.warning(f"Falha ao anexar uma foto: {e}")
 
         out = BytesIO()
         doc.save(out)
@@ -548,7 +571,7 @@ if submitted:
         st.download_button(
             "⬇️ Baixar RAT preenchido",
             data=out.getvalue(),
-            file_name=f"RAT_MAM_preenchido.pdf",
+            file_name=f"RAT_MAM_preenchido_{(num_chamado or 'sem_num')}.pdf",
             mime="application/pdf"
         )
     except Exception as e:
