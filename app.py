@@ -1,4 +1,4 @@
-# app.py — RAT MAM (OCR obrigatório + âncora S/N + edição + sem preview + fotos no PDF)
+# app.py — RAT MAM (OCR obrigatório + âncora S/N + edição + sem preview + assinatura transparente + fotos no PDF)
 from io import BytesIO
 from datetime import date, time
 from typing import List, Dict, Optional, Tuple
@@ -34,7 +34,7 @@ CM = 28.3465  # pontos por cm
 
 st.set_page_config(page_title=APP_TITLE, layout="centered")
 st.title("📄 " + APP_TITLE)
-st.caption("Scanner prioriza S/N (âncora 'S/N'); edição dos resultados; anexos de fotos ao PDF. OCR obrigatório.")
+st.caption("Scanner prioriza S/N (âncora 'S/N'); edição dos resultados; anexos de fotos ao PDF; assinatura com fundo transparente. OCR obrigatório.")
 
 # ---------- Verificação do Tesseract (OCR obrigatório) ----------
 def ensure_tesseract_available():
@@ -109,17 +109,38 @@ def normalize_phone(s: str) -> str:
     if len(d) == 10: return f"({d[:2]}) {d[2:6]}-{d[6:]}"
     return s
 
-def np_to_rgba_pil(arr) -> Optional[Image.Image]:
-    if arr is None or not isinstance(arr, np.ndarray) or arr.ndim != 3 or arr.shape[2] < 4: return None
-    if np.max(arr[:, :, 3]) == 0: return None
-    return Image.fromarray(arr.astype("uint8"), mode="RGBA")
-
 def remove_white_to_transparent(img: Image.Image, thresh=245) -> Image.Image:
     arr = np.array(img.convert("RGBA"))
     rgb = arr[:, :, :3]
     mask_white = (rgb[:, :, 0] >= thresh) & (rgb[:, :, 1] >= thresh) & (rgb[:, :, 2] >= thresh)
     arr[mask_white, 3] = 0
     return Image.fromarray(arr, mode="RGBA")
+
+# -------- Assinatura: canvas RGBA -> PNG transparente (sem fundo preto) --------
+def signature_rgba_from_canvas(arr: np.ndarray) -> Optional[Image.Image]:
+    """
+    arr: RGBA (H,W,4) do st_canvas.image_data.
+    Retorna PNG RGBA com fundo 100% transparente e traço preto sólido.
+    """
+    if arr is None or arr.ndim != 3 or arr.shape[2] < 4:
+        return None
+    rgba = arr.astype("uint8").copy()
+    A = rgba[:, :, 3].astype(np.float32) / 255.0
+    eps = 1e-6
+    # des-premultiplica (evita escurecimento)
+    for c in range(3):
+        ch = rgba[:, :, c].astype(np.float32)
+        ch = np.where(A > eps, ch / (A + eps), 0.0)
+        rgba[:, :, c] = np.clip(ch, 0, 255).astype("uint8")
+    # gera saída: só traço preto opaco, resto transparente
+    mask = (rgba[:, :, 3] > 0)
+    out = np.zeros_like(rgba, dtype=np.uint8)
+    out[:, :, 3] = 0
+    out[mask, 0] = 0
+    out[mask, 1] = 0
+    out[mask, 2] = 0
+    out[mask, 3] = 255
+    return Image.fromarray(out, mode="RGBA")
 
 @st.cache_data
 def load_pdf_bytes(path: str) -> bytes:
@@ -331,7 +352,6 @@ if btn_cam and st.session_state.get("cam_in") is not None:
 if btn_imgs and st.session_state.get("imgs_in"):
     for f in st.session_state.imgs_in:
         try:
-            # dedup por hash (evita reler as mesmas fotos em reruns)
             raw = f.getvalue()
             fp = _fingerprint_bytes(raw)
             if fp in st.session_state.seen_hashes:
@@ -410,7 +430,8 @@ st.text_input("RG/Documento do técnico", key="tec_rg")
 st.write("Assinatura do TÉCNICO")
 tec_canvas = st_canvas(
     fill_color="rgba(0,0,0,0)", stroke_width=3, stroke_color="#000000",
-    background_color="#FFFFFF", width=800, height=180,
+    background_color="rgba(0,0,0,0)",  # transparente
+    width=800, height=180,
     drawing_mode="freedraw", key="sig_tec", update_streamlit=True, display_toolbar=True,
 )
 
@@ -418,7 +439,8 @@ st.write("—")
 st.write("Assinatura do CLIENTE")
 cli_canvas = st_canvas(
     fill_color="rgba(0,0,0,0)", stroke_width=3, stroke_color="#000000",
-    background_color="#FFFFFF", width=800, height=180,
+    background_color="rgba(0,0,0,0)",  # transparente
+    width=800, height=180,
     drawing_mode="freedraw", key="sig_cli", update_streamlit=True, display_toolbar=True,
 )
 
@@ -447,8 +469,7 @@ def insert_signature(page, label, img_rgba: Image.Image, rel_rect):
     r = search_once(page, label)
     if not r: return
     rect = fitz.Rect(r.x0 + rel_rect[0], r.y1 + rel_rect[1], r.x0 + rel_rect[2], r.y1 + rel_rect[3])
-    img_clean = remove_white_to_transparent(img_rgba, 245)
-    buf = BytesIO(); img_clean.save(buf, format="PNG")
+    buf = BytesIO(); img_rgba.save(buf, format="PNG")  # mantém alpha
     page.insert_image(rect, stream=buf.getvalue())
 
 def descricao_block(seriais: str, atividade: str, info: str) -> str:
@@ -514,17 +535,18 @@ if st.button("🧾 Gerar PDF preenchido"):
         bloco = descricao_block(seriais, st.session_state.get("atividade_txt",""), st.session_state.get("info_txt",""))
         insert_descricao_autofit(page, ["DESCRIÇÃO DE ATENDIMENTO","DESCRICAO DE ATENDIMENTO"], bloco)
 
-        # assinaturas
+        # assinaturas (canvas transparente -> PNG RGBA)
         sig_tec_state = st.session_state.get("sig_tec")
         sig_cli_state = st.session_state.get("sig_cli")
-        sigtec = np_to_rgba_pil(sig_tec_state.image_data) if sig_tec_state is not None else None
-        sigcli = np_to_rgba_pil(sig_cli_state.image_data) if sig_cli_state is not None else None
+        sigtec = signature_rgba_from_canvas(sig_tec_state.image_data) if sig_tec_state is not None and getattr(sig_tec_state, "image_data", None) is not None else None
+        sigcli = signature_rgba_from_canvas(sig_cli_state.image_data) if sig_cli_state is not None and getattr(sig_cli_state, "image_data", None) is not None else None
+
         insert_signature(page, ["ASSINATURA:", "Assinatura:"], sigtec, (110 - 2*CM, 0 - 1*CM, 330 - 2*CM, 54 - 1*CM))
         insert_signature(page, ["DATA CARIMBO / ASSINATURA", "ASSINATURA CLIENTE", "CLIENTE"], sigcli, (110, 12 - 3.5*CM, 430, 94 - 3.5*CM))
 
         insert_right_of(page, [" Nº CHAMADO ", "Nº CHAMADO", "No CHAMADO"], st.session_state.get("num_chamado",""), dx=-(2*CM), dy=10)
 
-        # fotos (sem pré-visualização; anexadas só quando você clicar Ler CÂMERA/FOTOS/PDF e houver S/N válido)
+        # fotos (sem pré-visualização; anexadas só quando clicar Ler CÂMERA/FOTOS/PDF e houver S/N válido)
         if st.session_state.anexar_fotos and st.session_state.photos_to_append:
             for img_bytes in st.session_state.photos_to_append:
                 p = doc.new_page()
