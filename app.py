@@ -1,8 +1,8 @@
-# app.py — RAT MAM (OCR obrigatório + âncora S/N + edição + sem pré-visualização + fotos no PDF)
+# app.py — RAT MAM (OCR obrigatório + âncora S/N + edição + sem preview + fotos no PDF)
 from io import BytesIO
 from datetime import date, time
 from typing import List, Dict, Optional, Tuple
-import os, re
+import os, re, hashlib
 
 import streamlit as st
 from PIL import Image, ImageOps, ImageFilter
@@ -34,7 +34,7 @@ CM = 28.3465  # pontos por cm
 
 st.set_page_config(page_title=APP_TITLE, layout="centered")
 st.title("📄 " + APP_TITLE)
-st.caption("Scanner prioriza S/N (âncora 'S/N'), edição dos resultados e anexos de fotos ao PDF. OCR obrigatório.")
+st.caption("Scanner prioriza S/N (âncora 'S/N'); edição dos resultados; anexos de fotos ao PDF. OCR obrigatório.")
 
 # ---------- Verificação do Tesseract (OCR obrigatório) ----------
 def ensure_tesseract_available():
@@ -66,6 +66,9 @@ if "seriais_texto" not in st.session_state:
     st.session_state.seriais_texto = ""
 if "anexar_fotos" not in st.session_state:
     st.session_state.anexar_fotos = True
+# deduplicação opcional de imagens processadas (hash)
+if "seen_hashes" not in st.session_state:
+    st.session_state.seen_hashes = set()
 
 # -------------------- REGEX / UTILS --------------------
 REGEX_SN_ANC = re.compile(r'\bS/?N\b[:\-]?', re.I)
@@ -220,6 +223,9 @@ def _save_pil_to_jpeg_bytes(pil: Image.Image) -> Optional[bytes]:
     except Exception:
         return None
 
+def _fingerprint_bytes(b: bytes) -> str:
+    return hashlib.sha256(b).hexdigest()
+
 def scan_one_image(pil: Image.Image, fonte: str) -> Dict:
     text = ocr_text(pil)
     up = (text or "").upper()
@@ -250,6 +256,7 @@ def scan_one_image(pil: Image.Image, fonte: str) -> Dict:
         jpg = _save_pil_to_jpeg_bytes(pil)
         if jpg:
             st.session_state.photos_to_append.append(jpg)
+            st.session_state.seen_hashes.add(_fingerprint_bytes(jpg))
 
     return {"modelo": (modelo or ""), "sn": (sn or ""), "mac": (mac or ""), "fonte": fonte}
 
@@ -275,7 +282,7 @@ def push_to_textarea_from_items():
             all_lines.append(ln); seen2.add(ln)
     st.session_state.seriais_texto = "\n".join(all_lines)
 
-# -------------------- FORM (com submit dentro!) --------------------
+# -------------------- FORM (com submits por ação) --------------------
 with st.form("topo"):
     st.subheader("1) Chamado e Agenda")
     c1, c2 = st.columns(2)
@@ -297,29 +304,65 @@ with st.form("topo"):
     st.text_input("Telefone (contato)", key="contato_tel")
 
     st.subheader("3) Scanner de etiquetas (S/N)")
-    cam = st.camera_input("📸 Tirar foto (abre câmera)")
-    if cam:
-        pil = Image.open(cam).convert("RGB")
+    cam = st.camera_input("📸 Tirar foto (abre câmera)", key="cam_in")
+    imgs = st.file_uploader("📎 Enviar foto(s) de etiquetas", type=["jpg","jpeg","png","webp"], accept_multiple_files=True, key="imgs_in")
+    pdf = st.file_uploader("📎 Enviar RAT (PDF) para extrair fotos de etiquetas", type=["pdf"], key="pdf_in")
+
+    cbtn1, cbtn2, cbtn3, cbtn4 = st.columns([1,1,1,2])
+    with cbtn1:
+        btn_cam = st.form_submit_button("➕ Ler CÂMERA")
+    with cbtn2:
+        btn_imgs = st.form_submit_button("➕ Ler FOTOS")
+    with cbtn3:
+        btn_pdf = st.form_submit_button("➕ Ler PDF")
+    with cbtn4:
+        add_btn = st.form_submit_button("🡓 Jogar S/N para o campo de seriais")
+
+# --- Ações dos botões de leitura (somente quando clicados) ---
+if btn_cam and st.session_state.get("cam_in") is not None:
+    cam_file = st.session_state.cam_in
+    try:
+        pil = Image.open(cam_file).convert("RGB")
         add_scanned_item(scan_one_image(pil, "camera"))
+        st.success("Foto da CÂMERA lida.")
+    except Exception as e:
+        st.warning(f"Não consegui ler a foto da câmera: {e}")
 
-    imgs = st.file_uploader("📎 Enviar foto(s) de etiquetas", type=["jpg","jpeg","png","webp"], accept_multiple_files=True)
-    if imgs:
-        for f in imgs:
-            pil = Image.open(f).convert("RGB")
+if btn_imgs and st.session_state.get("imgs_in"):
+    for f in st.session_state.imgs_in:
+        try:
+            # dedup por hash (evita reler as mesmas fotos em reruns)
+            raw = f.getvalue()
+            fp = _fingerprint_bytes(raw)
+            if fp in st.session_state.seen_hashes:
+                continue
+            pil = Image.open(BytesIO(raw)).convert("RGB")
             add_scanned_item(scan_one_image(pil, f.name))
+            st.session_state.seen_hashes.add(fp)
+        except Exception as e:
+            st.warning(f"Não consegui ler uma foto: {e}")
+    st.success("FOTOS lidas.")
 
-    pdf = st.file_uploader("📎 Enviar RAT (PDF) para extrair fotos de etiquetas", type=["pdf"])
-    if pdf:
-        doc = fitz.open(stream=pdf.read(), filetype="pdf")
+if btn_pdf and st.session_state.get("pdf_in") is not None:
+    try:
+        doc = fitz.open(stream=st.session_state.pdf_in.read(), filetype="pdf")
         for pno, page in enumerate(doc):
             for idx, info in enumerate(page.get_images(full=True)):
                 base = doc.extract_image(info[0])
-                pil = Image.open(BytesIO(base["image"])).convert("RGB")
+                raw = base["image"]
+                fp = _fingerprint_bytes(raw)
+                if fp in st.session_state.seen_hashes:
+                    continue
+                pil = Image.open(BytesIO(raw)).convert("RGB")
                 add_scanned_item(scan_one_image(pil, f"pdf:p{pno}_img{idx}"))
-        st.success("PDF analisado.")
+                st.session_state.seen_hashes.add(fp)
+        st.success("PDF lido.")
+    except Exception as e:
+        st.warning(f"Falha ao analisar PDF: {e}")
 
-    st.markdown("---")
-    add_btn = st.form_submit_button("➕ Jogar os S/N para o campo de seriais")  # << dentro do form
+# Campo de seriais (textarea) – após botão de jogar
+if add_btn:
+    push_to_textarea_from_items()
 
 # -------------------- ITENS EDITÁVEIS / FOTOS --------------------
 st.subheader("Itens scaneados (edite se necessário)")
@@ -338,21 +381,20 @@ if st.session_state.scanned_items:
     )
     st.session_state.scanned_items = edited
 
-    cc1, cc2, cc3 = st.columns(3)
-    with cc1:
-        if st.button("🧹 Limpar ITENS (scanner)"):
-            st.session_state.scanned_items = []
-            st.info("Itens limpos.")
-    with cc2:
-        if st.button("🧹 Limpar FOTOS anexas"):
-            st.session_state.photos_to_append = []
-            st.info("Fotos limpas.")
-    with cc3:
-        st.session_state.anexar_fotos = st.checkbox("Anexar fotos com S/N ao PDF", value=st.session_state.anexar_fotos)
+c1, c2, c3 = st.columns(3)
+with c1:
+    if st.button("🧹 Limpar ITENS (scanner)"):
+        st.session_state.scanned_items = []
+        st.info("Itens limpos.")
+with c2:
+    if st.button("🧹 Limpar FOTOS anexas"):
+        st.session_state.photos_to_append = []
+        st.session_state.seen_hashes = set()  # libera reler se desejar
+        st.info("Fotos limpas.")
+with c3:
+    st.session_state.anexar_fotos = st.checkbox("Anexar fotos com S/N ao PDF", value=st.session_state.anexar_fotos)
 
-# Campo de seriais (textarea) – depois do submit do form
-if add_btn:
-    push_to_textarea_from_items()
+# Campo de seriais manual (editável)
 st.session_state.seriais_texto = st.text_area(
     "Seriais (um por linha) — você pode editar livremente",
     value=st.session_state.seriais_texto,
@@ -482,7 +524,7 @@ if st.button("🧾 Gerar PDF preenchido"):
 
         insert_right_of(page, [" Nº CHAMADO ", "Nº CHAMADO", "No CHAMADO"], st.session_state.get("num_chamado",""), dx=-(2*CM), dy=10)
 
-        # fotos (sem pre-visualização)
+        # fotos (sem pré-visualização; anexadas só quando você clicar Ler CÂMERA/FOTOS/PDF e houver S/N válido)
         if st.session_state.anexar_fotos and st.session_state.photos_to_append:
             for img_bytes in st.session_state.photos_to_append:
                 p = doc.new_page()
