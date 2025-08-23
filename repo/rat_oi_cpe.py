@@ -1,3 +1,5 @@
+PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
+PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT OI CPE NOVO.pdf") 
 # rat_oi_cpe.py — fluxo RAT OI CPE NOVO (com os campos que você pediu)
 from io import BytesIO
 from datetime import date, time, datetime
