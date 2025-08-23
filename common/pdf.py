@@ -1,3 +1,9 @@
+# common/pdf.py
+import os, fitz, streamlit as st
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))  # isto aponta para common/
+PROJECT_ROOT = os.path.dirname(PROJECT_ROOT)               # sobe p/ raiz
+# ... (o restante igual)
+
 # common/pdf.py — utilitários PyMuPDF (fitz) para preencher PDFs
 from io import BytesIO
 import fitz
