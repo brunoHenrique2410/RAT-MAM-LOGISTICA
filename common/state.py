@@ -1,4 +1,3 @@
-# common/state.py — helpers de estado e query params
 import streamlit as st
 from urllib.parse import urlencode
 
@@ -15,7 +14,8 @@ def get_initial_payload_url(base_url: str) -> str:
     ss = st.session_state
     for k in BASIC_KEYS:
         val = ss.get(k)
-        if val is None: continue
+        if val is None:
+            continue
         params[k] = str(val)
     return f"{base_url}?{urlencode(params)}"
 
