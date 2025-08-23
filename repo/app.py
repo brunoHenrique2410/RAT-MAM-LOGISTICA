@@ -1,13 +1,11 @@
 
-# --- PATH FIX: permite importar 'common' que está na raiz do repo ---
+# PATH FIX
 import os, sys
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(THIS_DIR)  # sobe 1 nível (raiz do repositório)
+PROJECT_ROOT = os.path.dirname(THIS_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
-# --------------------------------------------------------------------
 
-# app.py — HUB para escolher a RAT
 import streamlit as st
 import rat_mam, rat_oi_cpe
 from common.state import load_from_query_params, get_initial_payload_url
@@ -41,4 +39,5 @@ with col2:
         st.link_button("Abrir em app isolado ↗", get_initial_payload_url(url))
     else:
         st.info("Não configurado. Para ativar, defina a URL no dicionário ISOLATED_URLS.")
+
 
