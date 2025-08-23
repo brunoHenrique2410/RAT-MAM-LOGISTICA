@@ -77,7 +77,7 @@ def render():
 
     if st.button("🧾 Gerar PDF (MAM)"):
         try:
-            doc, page = open_pdf_template(RAT MAM.pdf)
+            doc, page = open_pdf_template(PDF_BASE_PATH)
 
             # Topo
             insert_right_of(page, ["Cliente:", "CLIENTE:"], ss.cliente_nome, dx=6, dy=1)
