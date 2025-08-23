@@ -82,17 +82,46 @@ def insert_signature_png(page, labels, sig_png_bytes, rel_rect, occurrence=1):
                      r.x0 + rel_rect[2], r.y1 + rel_rect[3])
     page.insert_image(rect, stream=sig_png_bytes, keep_proportion=True)
 
-def add_image_page(doc, img_bytes, quality=92):
-    """Cria página e centraliza a imagem."""
+# common/pdf.py
+
+from io import BytesIO
+from PIL import Image
+
+def add_image_page(doc, img_bytes, margin=36):
+    """
+    Cria uma página no PDF e insere a imagem centralizada com margens.
+    Usa PIL para ler a imagem (mais robusto do que abrir via fitz.open(filetype="image")).
+    """
+    if not img_bytes:
+        return
+
+    # Abre com PIL para obter dimensões e garantir compatibilidade com formatos (jpg/png/webp)
+    try:
+        pil = Image.open(BytesIO(img_bytes)).convert("RGB")
+    except Exception:
+        # fallback: não conseguiu abrir; tenta inserir sem redimensionar
+        page = doc.new_page()
+        page.insert_image(page.rect, stream=img_bytes, keep_proportion=True)
+        return
+
+    W, H = pil.size
+
+    # Nova página A4 (ou tamanho padrão do doc)
     page = doc.new_page()
-    imgdoc = fitz.open(stream=img_bytes, filetype="image")
-    pix = fitz.Pixmap(imgdoc, 0)
     w, h = page.rect.width, page.rect.height
-    margin = 36
-    max_w, max_h = w - 2*margin, h - 2*margin
-    scale = min(max_w / pix.width, max_h / pix.height)
-    new_w, new_h = int(pix.width * scale), int(pix.height * scale)
-    x0 = (w - new_w) / 2; y0 = (h - new_h) / 2
+
+    # Caixa útil com margens
+    max_w, max_h = w - 2 * margin, h - 2 * margin
+    if max_w <= 0 or max_h <= 0:
+        max_w, max_h = w, h
+
+    # Escala mantendo proporção
+    scale = min(max_w / W, max_h / H)
+    new_w, new_h = int(W * scale), int(H * scale)
+
+    x0 = (w - new_w) / 2
+    y0 = (h - new_h) / 2
     rect = fitz.Rect(x0, y0, x0 + new_w, y0 + new_h)
-    page.insert_image(rect, stream=img_bytes)
-    imgdoc.close()
+
+    # Reusa os bytes originais (PyMuPDF redimensiona internamente pela box)
+    page.insert_image(rect, stream=img_bytes, keep_proportion=True)
