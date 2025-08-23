@@ -4,6 +4,6 @@ PyMuPDF==1.24.12
 pytesseract==0.3.10
 streamlit-drawable-canvas==0.9.3
 numpy==2.1.1
-# opcionais (se for usar leitura de códigos de barras/QR)
+# opcionais:
 # pyzbar==0.1.9
 # zxing-cpp==2.2.0
