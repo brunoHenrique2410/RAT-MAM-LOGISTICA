@@ -1,3 +1,5 @@
+PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
+PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT MAM.pdf") 
 # rat_mam.py — fluxo RAT MAM (resumo funcional)
 from io import BytesIO
 from datetime import date, time
