@@ -21,7 +21,7 @@ from common.pdf import (
 
 # Caminho do template PDF partindo da raiz do repo
 PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
-PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT OI CPE NOVO.pdf")
+PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_OI_CPE_NOVO.pdf")
 
 
 def render():
