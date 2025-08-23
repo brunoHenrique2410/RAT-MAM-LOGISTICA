@@ -1,14 +1,16 @@
 
-# PATH FIX
+# --- PATH FIX: permitir imports a partir da raiz (common/, pdf_templates/) ---
 import os, sys
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(THIS_DIR)
+PROJECT_ROOT = os.path.dirname(THIS_DIR)  # sobe 1 nível
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
+# ------------------------------------------------------------------------------
 
 import streamlit as st
 import rat_mam, rat_oi_cpe
 from common.state import load_from_query_params, get_initial_payload_url
+
 
 st.set_page_config(page_title="RAT – Hub", layout="centered")
 st.title("📄 Hub de RATs")
@@ -39,5 +41,6 @@ with col2:
         st.link_button("Abrir em app isolado ↗", get_initial_payload_url(url))
     else:
         st.info("Não configurado. Para ativar, defina a URL no dicionário ISOLATED_URLS.")
+
 
 
