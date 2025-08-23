@@ -1,9 +1,10 @@
-# PATH FIX
+# --- PATH FIX: permitir imports a partir da raiz (common/, pdf_templates/) ---
 import os, sys
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(THIS_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
+# ------------------------------------------------------------------------------
 
 from io import BytesIO
 from datetime import date, time
@@ -11,11 +12,14 @@ import streamlit as st
 from PIL import Image
 import fitz
 
+from common.state import init_defaults          # ← este import faltava
 from common.ui import assinatura_dupla_png, scanner_minimo
 from common.pdf import (
     open_pdf_template, search_once, insert_right_of, insert_textbox,
     insert_signature_png, add_image_page, CM
 )
+
+# Caminho do template PDF partindo da raiz do repo
 PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
 PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT MAM.pdf")
 
