@@ -21,7 +21,7 @@ from common.pdf import (
 
 # Caminho do template PDF partindo da raiz do repo
 PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
-PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT MAM.pdf")
+PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT MAM")
 
 def render():
     st.header("🧾 RAT MAM")
