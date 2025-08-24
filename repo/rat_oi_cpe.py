@@ -122,9 +122,25 @@ def render():
         # Captura das assinaturas (PNG com transparência)
         assinatura_dupla_png()  # popula ss.sig_tec_png e ss.sig_cli_png
 
-    # ---------- 4) Equipamentos ----------
+      # 4) Equipamentos no Cliente (dinâmico)
     with st.expander("4) Equipamentos no Cliente", expanded=True):
         st.caption("Preencha ao menos 1 linha.")
+        # garante chaves em todas as linhas
+        def _norm_rows(rows):
+            out = []
+            for r in rows or []:
+                out.append({
+                    "tipo": r.get("tipo", ""),
+                    "numero_serie": r.get("numero_serie", ""),
+                    "fabricante": r.get("fabricante", ""),
+                    "status": r.get("status", ""),
+                })
+            if not out:
+                out = [{"tipo":"", "numero_serie":"", "fabricante":"", "status":""}]
+            return out
+
+        ss.equip_cli = _norm_rows(ss.equip_cli)
+
         data = st.data_editor(
             ss.equip_cli,
             num_rows="dynamic",
@@ -137,7 +153,8 @@ def render():
                 "status": st.column_config.TextColumn("Status"),
             },
         )
-        ss.equip_cli = data
+        ss.equip_cli = _norm_rows(data)
+
 
     # ---------- 5) Problema / Observações ----------
     with st.expander("5) Problema Encontrado & Observações", expanded=True):
@@ -147,6 +164,58 @@ def render():
     # ---------- 6) Foto(s) do Gateway ----------
     with st.expander("6) Foto do Gateway", expanded=True):
         foto_gateway_uploader()  # adiciona bytes das imagens em ss.fotos_gateway
+
+def _find_any(page, labels, occurrence=1):
+    if isinstance(labels, str):
+        labels = [labels]
+    occ = 0
+    for txt in labels:
+        rs = page.search_for(txt)
+        for r in rs:
+            occ += 1
+            if occ == occurrence:
+                return r
+    return None
+
+def insert_equip_table(page, rows, row_height=18, dy_header=42, fontsize=10):
+    """
+    Preenche a grade 'EQUIPAMENTOS NO CLIENTE' célula a célula.
+    Usa as âncoras dos cabeçalhos para definir as colunas e itera linhas para baixo.
+    """
+    if not rows:
+        return
+
+    # âncora do bloco (para posicionar abaixo do título)
+    blk_anchor = _find_any(page, ["EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente"])
+    if not blk_anchor:
+        return
+
+    # cabeçalhos das 4 colunas
+    tipo_r   = _find_any(page, ["Tipo"])
+    ns_r     = _find_any(page, ["Nº de Série","No de Serie","Nº de Serie","N° de Série"])
+    fab_r    = _find_any(page, ["Fabricante"])
+    st_r     = _find_any(page, ["Status"])
+
+    if not (tipo_r and ns_r and fab_r and st_r):
+        # fallback: usa offsets aproximados a partir do título
+        base_x = blk_anchor.x0 + 12
+        y0 = blk_anchor.y1 + dy_header
+        xs = [base_x, base_x + 160, base_x + 320, base_x + 460]
+    else:
+        y0 = max(tipo_r.y1, ns_r.y1, fab_r.y1, st_r.y1) + (dy_header - 20)
+        xs = [tipo_r.x0, ns_r.x0, fab_r.x0, st_r.x0]
+
+    for i, r in enumerate(rows):
+        y = y0 + i * row_height
+        vals = [
+            r.get("tipo",""),
+            r.get("numero_serie",""),
+            r.get("fabricante",""),
+            r.get("status",""),
+        ]
+        for x, val in zip(xs, vals):
+            if val:
+                page.insert_text((x + 4, y), str(val), fontsize=fontsize)
 
     # ---------- Geração do PDF ----------
     if st.button("🧾 Gerar PDF (OI CPE)"):
@@ -207,26 +276,21 @@ def render():
             insert_signature_png(target, ["Assinatura"], ss.sig_cli_png,
                                  (80, 20 - up3, 280, 90 - up3), occurrence=2)
 
-            # ===== Equipamentos no Cliente =====
-            if ss.equip_cli:
-                linhas = ["Tipo | Nº de Série | Fabricante | Status"]
-                for it in ss.equip_cli:
-                    if not (it.get("tipo") or it.get("numero_serie") or it.get("fabricante") or it.get("status")):
-                        continue
-                    linhas.append(
-                        f"{it.get('tipo','')} | {it.get('numero_serie','')} | {it.get('fabricante','')} | {it.get('status','')}"
-                    )
-                bloco_tab = "\n".join(linhas)
-                insert_textbox(target, ["EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente"],
-                               bloco_tab, width=540, y_offset=20, height=220, fontsize=9)
+                    # ===== Equipamentos no Cliente =====
+            insert_equip_table(target, ss.equip_cli, row_height=18, dy_header=42, fontsize=10)
 
             # ===== Problema / Observações =====
             if (ss.problema_encontrado or "").strip():
-                insert_textbox(target, ["PROBLEMA ENCONTRADO", "Problema Encontrado"],
-                               ss.problema_encontrado, width=540, y_offset=20, height=160, fontsize=10)
+                insert_textbox(target,
+                               ["PROBLEMA ENCONTRADO", "Problema Encontrado"],
+                               ss.problema_encontrado,
+                               width=540, y_offset=20, height=160, fontsize=10)
             if (ss.observacoes or "").strip():
-                insert_textbox(target, ["OBSERVAÇÕES", "Observacoes", "Observações"],
-                               ss.observacoes, width=540, y_offset=20, height=160, fontsize=10)
+                insert_textbox(target,
+                               ["OBSERVAÇÕES", "Observacoes", "Observações"],
+                               ss.observacoes,
+                               width=540, y_offset=20, height=160, fontsize=10)
+
 
             # ===== Fotos do gateway: 1 página por foto (depois do template) =====
             for b in ss.fotos_gateway:
