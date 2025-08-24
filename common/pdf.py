@@ -149,3 +149,37 @@ def add_image_page(doc, img_bytes, margin=36):
 
     # Inserimos os bytes originais (PyMuPDF faz o encaixe pelo rect)
     page.insert_image(rect, stream=img_bytes, keep_proportion=True)
+    # ===== Helpers específicos por PÁGINA =====
+
+def insert_right_of_on(page, labels, content, dx=0, dy=0, fontsize=10):
+    if not content: return
+    r = search_once(page, labels)
+    if not r: return
+    x = r.x1 + dx
+    y = r.y0 + r.height/1.5 + dy
+    page.insert_text((x, y), str(content), fontsize=fontsize)
+
+def insert_textbox_on(page, label, text, width=540, y_offset=20, fontsize=10, align=0, occurrence=1, height=280):
+    if not text: return
+    r = search_once(page, label, occurrence=occurrence)
+    if not r: return
+    rect = fitz.Rect(r.x0, r.y1 + y_offset, r.x0 + width, r.y1 + y_offset + height)
+    page.insert_textbox(rect, str(text), fontsize=fontsize, align=align)
+
+def mark_X_left_of_on(page, label_text, dx=-14, dy=0, occurrence=1, fontsize=12):
+    r = search_once(page, label_text, occurrence=occurrence)
+    if not r: return
+    x = r.x0 + dx
+    y = r.y0 + r.height/1.2 + dy
+    page.insert_text((x, y), "X", fontsize=fontsize)
+
+def insert_signature_png_on(page, labels, sig_png_bytes, rel_rect, occurrence=1):
+    if not sig_png_bytes: return
+    r = search_once(page, labels, occurrence=occurrence)
+    if not r: return
+    rect = fitz.Rect(
+        r.x0 + rel_rect[0], r.y1 + rel_rect[1],
+        r.x0 + rel_rect[2], r.y1 + rel_rect[3]
+    )
+    page.insert_image(rect, stream=sig_png_bytes, keep_proportion=True)
+
