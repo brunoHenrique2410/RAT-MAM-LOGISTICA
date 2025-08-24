@@ -1,4 +1,4 @@
-# repo/rat_oi_cpe.py — topo LIMPO (sem tabs / BOM)
+# repo/rat_oi_cpe.py — topo LIMPO (sem tabs / sem BOM)
 
 # --- PATH FIX: permite importar common/ e pdf_templates/ a partir da raiz ---
 import os
@@ -19,15 +19,14 @@ import fitz
 from common.state import init_defaults
 from common.ui import assinatura_dupla_png, foto_gateway_uploader
 from common.pdf import (
-    open_pdf_template, search_once,
-    insert_right_of, insert_textbox, mark_X_left_of,
+    open_pdf_template, search_once, insert_right_of, insert_textbox, mark_X_left_of,
     insert_signature_png, add_image_page, CM,
-    # se você adicionou os helpers *_on, importe-os também:
     insert_right_of_on, insert_textbox_on, mark_X_left_of_on, insert_signature_png_on
 )
 
 PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
 PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT OI CPE NOVO.pdf")
+
 
 
 
