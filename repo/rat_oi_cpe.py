@@ -35,7 +35,7 @@ def render():
     from io import BytesIO
     from datetime import date, time
 
-    st.header("🔌 RAT OI CPE NOVO (página única)")
+    st.header("🔌 RAT OI CPE NOVO")
 
     # ---------- Estado inicial ----------
     init_defaults({
@@ -148,64 +148,66 @@ def render():
     with st.expander("6) Foto do Gateway", expanded=True):
         foto_gateway_uploader()  # adiciona bytes das imagens em ss.fotos_gateway
 
-    # ---------- Geração do PDF (página ÚNICA) ----------
+    # ---------- Geração do PDF ----------
     if st.button("🧾 Gerar PDF (OI CPE)"):
         try:
-            # Abre o template (1 página longa)
-            doc, page = open_pdf_template(PDF_BASE_PATH, hint="RAT OI CPE NOVO")
+            # Abre o template
+            doc, page1 = open_pdf_template(PDF_BASE_PATH, hint="RAT OI CPE NOVO")
+            has_p2 = doc.page_count >= 2
+            page2 = doc[1] if has_p2 else page1  # alvo dos blocos “parte 2”
 
-            # —— Cabeçalho (tudo na page) ——
-            insert_right_of(page, ["Cliente"], ss.cliente, dx=8, dy=1)
-            insert_right_of(page, ["Número do Bilhete", "Numero do Bilhete"], ss.numero_chamado, dx=8, dy=1)
-            insert_right_of(page, ["Designação do Circuito", "Designacao do Circuito"], ss.numero_chamado, dx=8, dy=1)
+            # ====== PÁGINA 1: Cabeçalho + Serviços ======
+            insert_right_of(page1, ["Cliente"], ss.cliente, dx=8, dy=1)
+            insert_right_of(page1, ["Número do Bilhete", "Numero do Bilhete"], ss.numero_chamado, dx=8, dy=1)
+            insert_right_of(page1, ["Designação do Circuito", "Designacao do Circuito"], ss.numero_chamado, dx=8, dy=1)
 
-            insert_right_of(page, ["Horário Início", "Horario Inicio", "Horario Início"], ss.hora_inicio.strftime("%H:%M"), dx=8, dy=1)
-            insert_right_of(page, ["Horário Término", "Horario Termino", "Horário termino"], ss.hora_termino.strftime("%H:%M"), dx=8, dy=1)
+            insert_right_of(page1, ["Horário Início", "Horario Inicio", "Horario Início"], ss.hora_inicio.strftime("%H:%M"), dx=8, dy=1)
+            insert_right_of(page1, ["Horário Término", "Horario Termino", "Horário termino"], ss.hora_termino.strftime("%H:%M"), dx=8, dy=1)
 
-            # —— Serviços e atividades: marcar “X” à esquerda dos labels ——
+            # Serviços – marcar “X” à esquerda dos labels (na página 1)
             if ss.svc_instalacao:
-                mark_X_left_of(page, "Instalação", dx=-16, dy=0)
+                mark_X_left_of(page1, "Instalação", dx=-16, dy=0)
             if ss.svc_retirada:
-                mark_X_left_of(page, "Retirada", dx=-16, dy=0)
+                mark_X_left_of(page1, "Retirada", dx=-16, dy=0)
             if ss.svc_vistoria:
-                # alguns templates vêm sem acento
-                mark_X_left_of(page, "Vistoria Técnica", dx=-16, dy=0)
-                mark_X_left_of(page, "Vistoria Tecnica", dx=-16, dy=0)
+                mark_X_left_of(page1, "Vistoria Técnica", dx=-16, dy=0); mark_X_left_of(page1, "Vistoria Tecnica", dx=-16, dy=0)
             if ss.svc_alteracao:
-                mark_X_left_of(page, "Alteração Técnica", dx=-16, dy=0)
-                mark_X_left_of(page, "Alteracao Tecnica", dx=-16, dy=0)
+                mark_X_left_of(page1, "Alteração Técnica", dx=-16, dy=0); mark_X_left_of(page1, "Alteracao Tecnica", dx=-16, dy=0)
             if ss.svc_mudanca:
-                mark_X_left_of(page, "Mudança de Endereço", dx=-16, dy=0)
-                mark_X_left_of(page, "Mudanca de Endereco", dx=-16, dy=0)
+                mark_X_left_of(page1, "Mudança de Endereço", dx=-16, dy=0); mark_X_left_of(page1, "Mudanca de Endereco", dx=-16, dy=0)
             if ss.svc_teste_conjunto:
-                mark_X_left_of(page, "Teste em conjunto", dx=-16, dy=0)
+                mark_X_left_of(page1, "Teste em conjunto", dx=-16, dy=0)
             if ss.svc_servico_interno:
-                mark_X_left_of(page, "Serviço interno", dx=-16, dy=0)
-                mark_X_left_of(page, "Servico interno", dx=-16, dy=0)
+                mark_X_left_of(page1, "Serviço interno", dx=-16, dy=0); mark_X_left_of(page1, "Servico interno", dx=-16, dy=0)
 
-            # —— Identificação – Aceite (mesma page) ——
-            insert_right_of(page, ["Técnico", "Tecnico"], ss.tecnico_nome, dx=8, dy=1)
-            insert_right_of(page, ["Cliente Ciente"], ss.cliente_ciente_nome, dx=8, dy=1)
-            insert_right_of(page, ["Contato"], ss.contato, dx=8, dy=1)
-            insert_right_of(page, ["Data"], ss.data_aceite.strftime("%d/%m/%Y"), dx=8, dy=1)
-            insert_right_of(page, ["Horário", "Horario"], ss.horario_aceite.strftime("%H:%M"), dx=8, dy=1)
-            insert_right_of(page, ["Aceitação do serviço", "Aceitacao do servico"], ss.aceitacao_resp, dx=8, dy=1)
+            # ====== ALVO PARA BLOCO 2 (página 2 se existir; senão, página 1) ======
+            target = page2
 
-            # Teste WAN — marque X onde tiver as opções S / N / N/A (mesma page)
+            # Identificação – Aceite (textos)
+            insert_right_of(target, ["Técnico", "Tecnico"], ss.tecnico_nome, dx=8, dy=1)
+            insert_right_of(target, ["Cliente Ciente"], ss.cliente_ciente_nome, dx=8, dy=1)
+            insert_right_of(target, ["Contato"], ss.contato, dx=8, dy=1)
+            insert_right_of(target, ["Data"], ss.data_aceite.strftime("%d/%m/%Y"), dx=8, dy=1)
+            insert_right_of(target, ["Horário", "Horario"], ss.horario_aceite.strftime("%H:%M"), dx=8, dy=1)
+            insert_right_of(target, ["Aceitação do serviço", "Aceitacao do servico"], ss.aceitacao_resp, dx=8, dy=1)
+
+            # Teste WAN — marque X (S / N / N/A)
             if ss.teste_wan == "S":
-                mark_X_left_of(page, "S", dx=-12, dy=0, occurrence=1)
+                mark_X_left_of(target, "S", dx=-12, dy=0, occurrence=1)
             elif ss.teste_wan == "N":
-                mark_X_left_of(page, "N", dx=-12, dy=0, occurrence=1)
+                mark_X_left_of(target, "N", dx=-12, dy=0, occurrence=1)
             else:
-                # N/A varia (N/A, N / A, NA). Mantemos N/A padrão:
-                mark_X_left_of(page, "N/A", dx=-12, dy=0, occurrence=1)
+                mark_X_left_of(target, "N/A", dx=-12, dy=0, occurrence=1)
 
-            # —— Assinaturas (duas ocorrências de "Assinatura", mesma page) ——
-            # Ajuste fino do retângulo conforme o seu template:
-            insert_signature_png(page, ["Assinatura"], ss.sig_tec_png, (80, 20, 280, 90), occurrence=1)
-            insert_signature_png(page, ["Assinatura"], ss.sig_cli_png, (80, 20, 280, 90), occurrence=2)
+            # ===== Assinaturas — subir 3 cm =====
+            up3 = 3 * CM  # 3 centímetros para cima
+            # retângulos: (dx0, dy0, dx1, dy1) relativos à âncora "Assinatura"
+            insert_signature_png(target, ["Assinatura"], ss.sig_tec_png,
+                                 (80, 20 - up3, 280, 90 - up3), occurrence=1)
+            insert_signature_png(target, ["Assinatura"], ss.sig_cli_png,
+                                 (80, 20 - up3, 280, 90 - up3), occurrence=2)
 
-            # —— Tabela: EQUIPAMENTOS NO CLIENTE (mesma page, ancorado pelo título) ——
+            # ===== Equipamentos no Cliente =====
             if ss.equip_cli:
                 linhas = ["Tipo | Nº de Série | Fabricante | Status"]
                 for it in ss.equip_cli:
@@ -215,18 +217,18 @@ def render():
                         f"{it.get('tipo','')} | {it.get('numero_serie','')} | {it.get('fabricante','')} | {it.get('status','')}"
                     )
                 bloco_tab = "\n".join(linhas)
-                insert_textbox(page, ["EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente"], bloco_tab,
-                               width=540, y_offset=20, height=220, fontsize=9)
+                insert_textbox(target, ["EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente"],
+                               bloco_tab, width=540, y_offset=20, height=220, fontsize=9)
 
-            # —— Blocos de texto: PROBLEMA / OBSERVAÇÕES (mesma page) ——
+            # ===== Problema / Observações =====
             if (ss.problema_encontrado or "").strip():
-                insert_textbox(page, ["PROBLEMA ENCONTRADO", "Problema Encontrado"], ss.problema_encontrado,
-                               width=540, y_offset=20, height=160, fontsize=10)
+                insert_textbox(target, ["PROBLEMA ENCONTRADO", "Problema Encontrado"],
+                               ss.problema_encontrado, width=540, y_offset=20, height=160, fontsize=10)
             if (ss.observacoes or "").strip():
-                insert_textbox(page, ["OBSERVAÇÕES", "Observacoes", "Observações"], ss.observacoes,
-                               width=540, y_offset=20, height=160, fontsize=10)
+                insert_textbox(target, ["OBSERVAÇÕES", "Observacoes", "Observações"],
+                               ss.observacoes, width=540, y_offset=20, height=160, fontsize=10)
 
-            # —— Fotos do gateway: cada foto em NOVA página (depois do template) ——
+            # ===== Fotos do gateway: 1 página por foto (depois do template) =====
             for b in ss.fotos_gateway:
                 if not b:
                     continue
