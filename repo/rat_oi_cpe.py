@@ -31,64 +31,85 @@ PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT OI CPE NOVO.pdf")
 
 
 def render():
-    st.header("🔌 RAT OI CPE NOVO")
+    import streamlit as st
+    from io import BytesIO
+    from datetime import date, time
 
-    # Estado inicial
+    st.header("🔌 RAT OI CPE NOVO (página única)")
+
+    # ---------- Estado inicial ----------
     init_defaults({
         "cliente": "",
         "numero_chamado": "",
-        "hora_inicio": time(8,0),
-        "hora_termino": time(10,0),
-        # serviços
-        "svc_instalacao": False, "svc_retirada": False, "svc_vistoria": False,
-        "svc_alteracao": False, "svc_mudanca": False, "svc_teste_conjunto": False,
+        "hora_inicio": time(8, 0),
+        "hora_termino": time(10, 0),
+
+        # Serviços e atividades solicitadas
+        "svc_instalacao": False,
+        "svc_retirada": False,
+        "svc_vistoria": False,
+        "svc_alteracao": False,
+        "svc_mudanca": False,
+        "svc_teste_conjunto": False,
         "svc_servico_interno": False,
-        # aceite
+
+        # Identificação – Aceite da Atividade
         "teste_wan": "NA",
-        "tecnico_nome": "", "cliente_ciente_nome": "",
-        "contato": "", "data_aceite": date.today(),
-        "horario_aceite": time(10,0), "aceitacao_resp": "",
-        "sig_tec_png": None, "sig_cli_png": None,
-        # equipamentos cliente (lista simples)
-        "equip_cli": [{"tipo":"", "numero_serie":"", "fabricante":"", "status":""}],
-        # textos
+        "tecnico_nome": "",
+        "cliente_ciente_nome": "",
+        "contato": "",
+        "data_aceite": date.today(),
+        "horario_aceite": time(10, 0),
+        "aceitacao_resp": "",
+        "sig_tec_png": None,
+        "sig_cli_png": None,
+
+        # Tabela Equipamentos no Cliente
+        "equip_cli": [{"tipo": "", "numero_serie": "", "fabricante": "", "status": ""}],
+
+        # Blocos de texto
         "problema_encontrado": "",
         "observacoes": "",
-        # fotos
+
+        # Fotos (gateway)
         "fotos_gateway": [],
     })
 
     ss = st.session_state
 
-    # 1) Cabeçalho
+    # ---------- 1) Cabeçalho ----------
     with st.expander("1) Cabeçalho", expanded=True):
-        c1,c2 = st.columns(2)
+        c1, c2 = st.columns(2)
         with c1:
             ss.cliente = st.text_input("Cliente", value=ss.cliente)
             ss.numero_chamado = st.text_input("Número do Chamado", value=ss.numero_chamado)
             ss.hora_inicio = st.time_input("Horário Início", value=ss.hora_inicio)
         with c2:
-            st.markdown("**Número do Bilhete e Designação do Circuito receberão o Nº do Chamado.**")
+            st.caption("“Número do Bilhete” e “Designação do Circuito” receberão o Nº do Chamado.")
             ss.hora_termino = st.time_input("Horário Término", value=ss.hora_termino)
 
-    # 2) Serviços e Atividades Solicitadas
+    # ---------- 2) Serviços e Atividades ----------
     with st.expander("2) Serviços e Atividades Solicitadas", expanded=True):
-        c1,c2,c3 = st.columns(3)
+        c1, c2, c3 = st.columns(3)
         with c1:
             ss.svc_instalacao = st.checkbox("Instalação", value=ss.svc_instalacao)
-            ss.svc_retirada   = st.checkbox("Retirada", value=ss.svc_retirada)
-            ss.svc_vistoria   = st.checkbox("Vistoria Técnica", value=ss.svc_vistoria)
+            ss.svc_retirada = st.checkbox("Retirada", value=ss.svc_retirada)
+            ss.svc_vistoria = st.checkbox("Vistoria Técnica", value=ss.svc_vistoria)
         with c2:
-            ss.svc_alteracao  = st.checkbox("Alteração Técnica", value=ss.svc_alteracao)
-            ss.svc_mudanca    = st.checkbox("Mudança de Endereço", value=ss.svc_mudanca)
+            ss.svc_alteracao = st.checkbox("Alteração Técnica", value=ss.svc_alteracao)
+            ss.svc_mudanca = st.checkbox("Mudança de Endereço", value=ss.svc_mudanca)
         with c3:
             ss.svc_teste_conjunto = st.checkbox("Teste em conjunto", value=ss.svc_teste_conjunto)
-            ss.svc_servico_interno= st.checkbox("Serviço interno", value=ss.svc_servico_interno)
+            ss.svc_servico_interno = st.checkbox("Serviço interno", value=ss.svc_servico_interno)
 
-    # 3) Identificação – Aceite da Atividade
+    # ---------- 3) Identificação – Aceite ----------
     with st.expander("3) Identificação – Aceite da Atividade", expanded=True):
-        ss.teste_wan = st.radio("Teste de conectividade WAN realizado com sucesso?", ["S","N","NA"], index=["S","N","NA"].index(ss.teste_wan))
-        c1,c2 = st.columns(2)
+        ss.teste_wan = st.radio(
+            "Teste de conectividade WAN realizado com sucesso?",
+            ["S", "N", "NA"],
+            index=["S", "N", "NA"].index(ss.teste_wan)
+        )
+        c1, c2 = st.columns(2)
         with c1:
             ss.tecnico_nome = st.text_input("Técnico (nome)", value=ss.tecnico_nome)
             ss.cliente_ciente_nome = st.text_input("Cliente ciente (nome)", value=ss.cliente_ciente_nome)
@@ -98,102 +119,130 @@ def render():
             ss.horario_aceite = st.time_input("Horário", value=ss.horario_aceite)
             ss.aceitacao_resp = st.text_input("Aceitação do serviço pelo responsável", value=ss.aceitacao_resp)
 
-        assinatura_dupla_png()  # usa ss.sig_tec_png / ss.sig_cli_png
+        # Captura das assinaturas (PNG com transparência)
+        assinatura_dupla_png()  # popula ss.sig_tec_png e ss.sig_cli_png
 
-    # 4) Equipamentos no Cliente (dinâmico)
+    # ---------- 4) Equipamentos ----------
     with st.expander("4) Equipamentos no Cliente", expanded=True):
         st.caption("Preencha ao menos 1 linha.")
         data = st.data_editor(
-            ss.equip_cli, num_rows="dynamic", use_container_width=True, key="equip_cli_editor",
+            ss.equip_cli,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="equip_cli_editor",
             column_config={
-                "tipo":        st.column_config.TextColumn("Tipo"),
-                "numero_serie":st.column_config.TextColumn("Nº de Série"),
-                "fabricante":  st.column_config.TextColumn("Fabricante"),
-                "status":      st.column_config.TextColumn("Status"),
+                "tipo": st.column_config.TextColumn("Tipo"),
+                "numero_serie": st.column_config.TextColumn("Nº de Série"),
+                "fabricante": st.column_config.TextColumn("Fabricante"),
+                "status": st.column_config.TextColumn("Status"),
             },
         )
         ss.equip_cli = data
 
-    # 5) Problema / Observações
+    # ---------- 5) Problema / Observações ----------
     with st.expander("5) Problema Encontrado & Observações", expanded=True):
         ss.problema_encontrado = st.text_area("Problema Encontrado", value=ss.problema_encontrado, height=120)
-        ss.observacoes         = st.text_area("Observações", value=ss.observacoes, height=120)
+        ss.observacoes = st.text_area("Observações", value=ss.observacoes, height=120)
 
-    # 6) Foto(s) do Gateway
+    # ---------- 6) Foto(s) do Gateway ----------
     with st.expander("6) Foto do Gateway", expanded=True):
-        foto_gateway_uploader()  # preenche ss.fotos_gateway
+        foto_gateway_uploader()  # adiciona bytes das imagens em ss.fotos_gateway
 
-      if st.button("🧾 Gerar PDF (OI CPE)"):
+    # ---------- Geração do PDF (página ÚNICA) ----------
+    if st.button("🧾 Gerar PDF (OI CPE)"):
         try:
-            doc, page1 = open_pdf_template(PDF_BASE_PATH, hint="RAT OI CPE NOVO")
-            # Garante 2ª página
-            if doc.page_count >= 2:
-                page2 = doc[1]
+            # Abre o template (1 página longa)
+            doc, page = open_pdf_template(PDF_BASE_PATH, hint="RAT OI CPE NOVO")
+
+            # —— Cabeçalho (tudo na page) ——
+            insert_right_of(page, ["Cliente"], ss.cliente, dx=8, dy=1)
+            insert_right_of(page, ["Número do Bilhete", "Numero do Bilhete"], ss.numero_chamado, dx=8, dy=1)
+            insert_right_of(page, ["Designação do Circuito", "Designacao do Circuito"], ss.numero_chamado, dx=8, dy=1)
+
+            insert_right_of(page, ["Horário Início", "Horario Inicio", "Horario Início"], ss.hora_inicio.strftime("%H:%M"), dx=8, dy=1)
+            insert_right_of(page, ["Horário Término", "Horario Termino", "Horário termino"], ss.hora_termino.strftime("%H:%M"), dx=8, dy=1)
+
+            # —— Serviços e atividades: marcar “X” à esquerda dos labels ——
+            if ss.svc_instalacao:
+                mark_X_left_of(page, "Instalação", dx=-16, dy=0)
+            if ss.svc_retirada:
+                mark_X_left_of(page, "Retirada", dx=-16, dy=0)
+            if ss.svc_vistoria:
+                # alguns templates vêm sem acento
+                mark_X_left_of(page, "Vistoria Técnica", dx=-16, dy=0)
+                mark_X_left_of(page, "Vistoria Tecnica", dx=-16, dy=0)
+            if ss.svc_alteracao:
+                mark_X_left_of(page, "Alteração Técnica", dx=-16, dy=0)
+                mark_X_left_of(page, "Alteracao Tecnica", dx=-16, dy=0)
+            if ss.svc_mudanca:
+                mark_X_left_of(page, "Mudança de Endereço", dx=-16, dy=0)
+                mark_X_left_of(page, "Mudanca de Endereco", dx=-16, dy=0)
+            if ss.svc_teste_conjunto:
+                mark_X_left_of(page, "Teste em conjunto", dx=-16, dy=0)
+            if ss.svc_servico_interno:
+                mark_X_left_of(page, "Serviço interno", dx=-16, dy=0)
+                mark_X_left_of(page, "Servico interno", dx=-16, dy=0)
+
+            # —— Identificação – Aceite (mesma page) ——
+            insert_right_of(page, ["Técnico", "Tecnico"], ss.tecnico_nome, dx=8, dy=1)
+            insert_right_of(page, ["Cliente Ciente"], ss.cliente_ciente_nome, dx=8, dy=1)
+            insert_right_of(page, ["Contato"], ss.contato, dx=8, dy=1)
+            insert_right_of(page, ["Data"], ss.data_aceite.strftime("%d/%m/%Y"), dx=8, dy=1)
+            insert_right_of(page, ["Horário", "Horario"], ss.horario_aceite.strftime("%H:%M"), dx=8, dy=1)
+            insert_right_of(page, ["Aceitação do serviço", "Aceitacao do servico"], ss.aceitacao_resp, dx=8, dy=1)
+
+            # Teste WAN — marque X onde tiver as opções S / N / N/A (mesma page)
+            if ss.teste_wan == "S":
+                mark_X_left_of(page, "S", dx=-12, dy=0, occurrence=1)
+            elif ss.teste_wan == "N":
+                mark_X_left_of(page, "N", dx=-12, dy=0, occurrence=1)
             else:
-                page2 = doc.new_page()  # se o template tiver 1 página, cria a 2ª
+                # N/A varia (N/A, N / A, NA). Mantemos N/A padrão:
+                mark_X_left_of(page, "N/A", dx=-12, dy=0, occurrence=1)
 
-            # ====== PÁGINA 1: Cabeçalho + Serviços ======
-            insert_right_of_on(page1, ["Cliente"], ss.cliente, dx=8, dy=1)
-            insert_right_of_on(page1, ["Número do Bilhete","Numero do Bilhete"], ss.numero_chamado, dx=8, dy=1)
-            insert_right_of_on(page1, ["Designação do Circuito","Designacao do Circuito"], ss.numero_chamado, dx=8, dy=1)
+            # —— Assinaturas (duas ocorrências de "Assinatura", mesma page) ——
+            # Ajuste fino do retângulo conforme o seu template:
+            insert_signature_png(page, ["Assinatura"], ss.sig_tec_png, (80, 20, 280, 90), occurrence=1)
+            insert_signature_png(page, ["Assinatura"], ss.sig_cli_png, (80, 20, 280, 90), occurrence=2)
 
-            # Horários (página 1)
-            insert_right_of_on(page1, ["Horario","Horário"], ss.hora_inicio.strftime("%H:%M"), dx=80, dy=0)
-            insert_right_of_on(page1, ["Horário Término","Horario Termino","Horário termino"], ss.hora_termino.strftime("%H:%M"), dx=8, dy=1)
-
-            # Serviços – marcar X na página 1
-            if ss.svc_instalacao:       mark_X_left_of_on(page1, "Instalação", dx=-16, dy=0)
-            if ss.svc_retirada:         mark_X_left_of_on(page1, "Retirada", dx=-16, dy=0)
-            if ss.svc_vistoria:         mark_X_left_of_on(page1, "Vistoria Tecnica", dx=-16, dy=0)  # cuidado com acento no template
-            if ss.svc_alteracao:        mark_X_left_of_on(page1, "Alteração Tecnica", dx=-16, dy=0)
-            if ss.svc_mudanca:          mark_X_left_of_on(page1, "Mudança de Endereço", dx=-16, dy=0)
-            if ss.svc_teste_conjunto:   mark_X_left_of_on(page1, "Teste em conjunto", dx=-16, dy=0)
-            if ss.svc_servico_interno:  mark_X_left_of_on(page1, "Serviço interno", dx=-16, dy=0)
-
-            # ====== PÁGINA 2: Identificação – Aceite, Tabelas e Textos ======
-            # Aceite — textos
-            insert_right_of_on(page2, ["Técnico","Tecnico"], ss.tecnico_nome, dx=8, dy=1)
-            insert_right_of_on(page2, ["Cliente Ciente"], ss.cliente_ciente_nome, dx=8, dy=1)
-            insert_right_of_on(page2, ["Contato"], ss.contato, dx=8, dy=1)
-            insert_right_of_on(page2, ["Data"], ss.data_aceite.strftime("%d/%m/%y"), dx=8, dy=1)
-            insert_right_of_on(page2, ["Horario","Horário"], ss.horario_aceite.strftime("%H:%M"), dx=8, dy=1)
-            insert_right_of_on(page2, ["Aceitação do serviço","Aceitacao do servico"], ss.aceitacao_resp, dx=8, dy=1)
-
-            # Aceite — S/N/NA na página 2 (marque ao lado das opções dessa página)
-            if ss.teste_wan == "S":  mark_X_left_of_on(page2, "S", dx=-12, dy=0)
-            if ss.teste_wan == "N":  mark_X_left_of_on(page2, "N", dx=-12, dy=0)
-            if ss.teste_wan == "NA": mark_X_left_of_on(page2, "N/A", dx=-12, dy=0)
-
-            # Assinaturas (na página 2) — ajuste fino do rel_rect conforme seu template
-            insert_signature_png_on(page2, ["Assinatura"], ss.sig_tec_png, (80, 20, 280, 90), occurrence=1)
-            insert_signature_png_on(page2, ["Assinatura"], ss.sig_cli_png, (80, 20, 280, 90), occurrence=2)
-
-            # Equipamentos no Cliente (página 2)
+            # —— Tabela: EQUIPAMENTOS NO CLIENTE (mesma page, ancorado pelo título) ——
             if ss.equip_cli:
                 linhas = ["Tipo | Nº de Série | Fabricante | Status"]
                 for it in ss.equip_cli:
-                    if not (it.get("tipo") or it.get("numero_serie")):
+                    if not (it.get("tipo") or it.get("numero_serie") or it.get("fabricante") or it.get("status")):
                         continue
-                    linhas.append(f"{it.get('tipo','')} | {it.get('numero_serie','')} | {it.get('fabricante','')} | {it.get('status','')}")
+                    linhas.append(
+                        f"{it.get('tipo','')} | {it.get('numero_serie','')} | {it.get('fabricante','')} | {it.get('status','')}"
+                    )
                 bloco_tab = "\n".join(linhas)
-                insert_textbox_on(page2, ["EQUIPAMENTOS NO CLIENTE","Equipamentos no Cliente"], bloco_tab, width=540, y_offset=20, height=220)
+                insert_textbox(page, ["EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente"], bloco_tab,
+                               width=540, y_offset=20, height=220, fontsize=9)
 
-            # Problema / Observações (página 2)
-            if ss.problema_encontrado.strip():
-                insert_textbox_on(page2, ["PROBLEMA ENCONTRADO","Problema Encontrado"], ss.problema_encontrado, width=540, y_offset=20, height=160)
-            if ss.observacoes.strip():
-                insert_textbox_on(page2, ["OBSERVAÇÕES","Observacoes","Observações"], ss.observacoes, width=540, y_offset=20, height=160)
+            # —— Blocos de texto: PROBLEMA / OBSERVAÇÕES (mesma page) ——
+            if (ss.problema_encontrado or "").strip():
+                insert_textbox(page, ["PROBLEMA ENCONTRADO", "Problema Encontrado"], ss.problema_encontrado,
+                               width=540, y_offset=20, height=160, fontsize=10)
+            if (ss.observacoes or "").strip():
+                insert_textbox(page, ["OBSERVAÇÕES", "Observacoes", "Observações"], ss.observacoes,
+                               width=540, y_offset=20, height=160, fontsize=10)
 
-            # Foto(s) do gateway — 1 página por foto, após a página 2
+            # —— Fotos do gateway: cada foto em NOVA página (depois do template) ——
             for b in ss.fotos_gateway:
-                if not b: continue
+                if not b:
+                    continue
                 add_image_page(doc, b)
 
-            out = BytesIO(); doc.save(out); doc.close()
+            # Exporta
+            out = BytesIO()
+            doc.save(out)
+            doc.close()
             st.success("PDF (OI CPE) gerado!")
-            st.download_button("⬇️ Baixar RAT OI CPE", data=out.getvalue(),
-                               file_name=f"RAT_OI_CPE_{(ss.numero_chamado or 'sem_num')}.pdf",
-                               mime="application/pdf")
+            st.download_button(
+                "⬇️ Baixar RAT OI CPE",
+                data=out.getvalue(),
+                file_name=f"RAT_OI_CPE_{(ss.numero_chamado or 'sem_num')}.pdf",
+                mime="application/pdf",
+            )
         except Exception as e:
             st.error("Falha ao gerar PDF OI CPE.")
             st.exception(e)
