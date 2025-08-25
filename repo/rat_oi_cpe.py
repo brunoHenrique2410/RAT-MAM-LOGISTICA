@@ -1,4 +1,4 @@
-# repo/rat_oi_cpe.py — RAT OI CPE (preenchimento ancorado, assinaturas +3cm)
+# repo/rat_oi_cpe.py — RAT OI CPE (preenchimento ancorado, assinaturas +3 cm)
 
 # --- PATH FIX: permite importar common/ e pdf_templates/ a partir da raiz ---
 import os
@@ -13,27 +13,22 @@ if PROJECT_ROOT not in sys.path:
 from io import BytesIO
 from datetime import date, time
 import streamlit as st
-from PIL import Image
-import fitz
 
 from common.state import init_defaults
 from common.ui import assinatura_dupla_png, foto_gateway_uploader
 from common.pdf import (
-    open_pdf_template, search_once, insert_right_of, insert_textbox, mark_X_left_of,
+    open_pdf_template, insert_right_of, insert_textbox, mark_X_left_of,
     insert_signature_png, add_image_page, CM
 )
 
 PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
-PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_OI_CPE_NOVO.pdf")
+PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT OI CPE NOVO.pdf")
 
 
 # ===================== Helpers locais =====================
 
 def _find_any(page, labels, occurrence=1):
-    """
-    Busca a 'occurrence'-ésima ocorrência de qualquer label na lista.
-    Retorna o primeiro Rect correspondente ou None.
-    """
+    """Busca a 'occurrence'-ésima ocorrência de qualquer label e retorna o Rect, ou None."""
     if isinstance(labels, str):
         labels = [labels]
     occ = 0
@@ -47,6 +42,61 @@ def _find_any(page, labels, occurrence=1):
             if occ == occurrence:
                 return r
     return None
+
+
+def _find_section_anchor(page, labels):
+    """Retorna o Rect do título da seção (ex.: 'Identificação – Aceite da Atividade')."""
+    if isinstance(labels, str):
+        labels = [labels]
+    for lbl in labels:
+        hits = page.search_for(lbl)
+        if hits:
+            return hits[0]
+    return None
+
+
+def insert_right_of_in_section(page, section_anchor, field_labels, content, dx=8, dy=1, fontsize=10):
+    """
+    Dentro de uma seção (ancorada por section_anchor), encontre a ocorrência de field_labels
+    cuja origem esteja ABAIXO da âncora e mais próxima verticalmente — e insira à direita.
+    """
+    if not content or not section_anchor:
+        return
+    if isinstance(field_labels, str):
+        field_labels = [field_labels]
+
+    # colete todos os rótulos abaixo da âncora
+    candidates = []
+    for lbl in field_labels:
+        for r in page.search_for(lbl):
+            if r.y0 > section_anchor.y0:  # só abaixo do título da seção
+                candidates.append(r)
+    if not candidates:
+        return
+
+    # escolha o mais próximo verticalmente ao título da seção
+    target = min(candidates, key=lambda r: (r.y0 - section_anchor.y0, abs(r.x0 - section_anchor.x0)))
+    x = target.x1 + dx
+    y = target.y0 + target.height / 1.5 + dy
+    page.insert_text((x, y), str(content), fontsize=fontsize)
+
+
+def mark_X_left_of_in_section(page, section_anchor, field_labels, dx=-12, dy=0):
+    """Variante do 'X' que só marca opções ABAIXO do título da seção."""
+    if not section_anchor:
+        return
+    if isinstance(field_labels, str):
+        field_labels = [field_labels]
+
+    candidates = []
+    for lbl in field_labels:
+        for r in page.search_for(lbl):
+            if r.y0 > section_anchor.y0:
+                candidates.append(r)
+    if not candidates:
+        return
+    target = min(candidates, key=lambda r: (r.y0 - section_anchor.y0, abs(r.x0 - section_anchor.x0)))
+    page.insert_text((target.x0 + dx, target.y0 + dy), "X", fontsize=12)
 
 
 def insert_equip_table(page, rows, row_height=18, dy_header=42, fontsize=10):
@@ -93,9 +143,7 @@ def insert_equip_table(page, rows, row_height=18, dy_header=42, fontsize=10):
 
 
 def _normalize_equip_rows(rows):
-    """
-    Garante que toda linha tenha as 4 chaves, evitando apagar colunas ao editar.
-    """
+    """Garante que toda linha tenha as 4 chaves, evitando apagar colunas ao editar."""
     out = []
     for r in rows or []:
         out.append({
@@ -267,39 +315,50 @@ def render():
             # ====== Alvo dos blocos “parte 2” (page2 se existir) ======
             target = page2
 
-            # Identificação – Aceite (textos)
-            insert_right_of(target, ["Técnico:", "Tecnico:", "Técnico", "Tecnico"],
-                            ss.tecnico_nome, dx=8, dy=1)
-            insert_right_of(target, ["Cliente Ciente:", "Cliente Ciente"],
-                            ss.cliente_ciente_nome, dx=8, dy=1)
-            insert_right_of(target, ["Contato:", "Contato"],
-                            ss.contato, dx=8, dy=1)
-            insert_right_of(target, ["Data:", "Data"],
-                            ss.data_aceite.strftime("%d/%m/%Y"), dx=8, dy=1)
-            insert_right_of(target, ["Horário:", "Horario:", "Horário", "Horario"],
-                            ss.horario_aceite.strftime("%H:%M"), dx=8, dy=1)
-            insert_right_of(target, ["Aceitação do serviço", "Aceitacao do servico"],
-                            ss.aceitacao_resp, dx=8, dy=1)
+            # âncora da seção "Identificação – Aceite da Atividade"
+            sec_anchor = _find_section_anchor(
+                target,
+                [
+                    "Identificação – Aceite da Atividade",
+                    "Identificacao - Aceite da Atividade",
+                    "IDENTIFICAÇÃO – ACEITE DA ATIVIDADE",
+                    "IDENTIFICACAO - ACEITE DA ATIVIDADE",
+                ],
+            )
 
-            # Teste WAN — X em S/N/NA
+            # --- Identificação – Aceite (textos) ANCORADO À SEÇÃO ---
+            insert_right_of_in_section(target, sec_anchor, ["Técnico:", "Tecnico:", "Técnico", "Tecnico"],
+                                       ss.tecnico_nome, dx=8, dy=1)
+            insert_right_of_in_section(target, sec_anchor, ["Cliente Ciente:", "Cliente Ciente"],
+                                       ss.cliente_ciente_nome, dx=8, dy=1)
+            insert_right_of_in_section(target, sec_anchor, ["Contato:", "Contato"],
+                                       ss.contato, dx=8, dy=1)
+            insert_right_of_in_section(target, sec_anchor, ["Data:", "Data"],
+                                       ss.data_aceite.strftime("%d/%m/%Y"), dx=8, dy=1)
+            insert_right_of_in_section(target, sec_anchor, ["Horário:", "Horario:", "Horário", "Horario"],
+                                       ss.horario_aceite.strftime("%H:%M"), dx=8, dy=1)
+            insert_right_of_in_section(target, sec_anchor, ["Aceitação do serviço", "Aceitacao do servico"],
+                                       ss.aceitacao_resp, dx=8, dy=1)
+
+            # --- Teste WAN (S / N / N/A) ANCORADO À SEÇÃO ---
             if ss.teste_wan == "S":
-                mark_X_left_of(target, "S", dx=-12, dy=0, occurrence=1)
+                mark_X_left_of_in_section(target, sec_anchor, ["S"], dx=-12, dy=0)
             elif ss.teste_wan == "N":
-                mark_X_left_of(target, "N", dx=-12, dy=0, occurrence=1)
+                mark_X_left_of_in_section(target, sec_anchor, ["N"], dx=-12, dy=0)
             else:
-                mark_X_left_of(target, "N/A", dx=-12, dy=0, occurrence=1)
+                mark_X_left_of_in_section(target, sec_anchor, ["N/A", "NA"], dx=-12, dy=0)
 
-            # Assinaturas — subir 3 cm
+            # --- Assinaturas (sobem 3 cm), ainda dentro da mesma seção ---
             up3 = 3 * CM
             insert_signature_png(target, ["Assinatura"], ss.sig_tec_png,
                                  (80, 20 - up3, 280, 90 - up3), occurrence=1)
             insert_signature_png(target, ["Assinatura"], ss.sig_cli_png,
                                  (80, 20 - up3, 280, 90 - up3), occurrence=2)
 
-            # Equipamentos no Cliente (tabela)
+            # --- Equipamentos no Cliente (tabela) ---
             insert_equip_table(target, ss.equip_cli, row_height=18, dy_header=42, fontsize=10)
 
-            # Problema / Observações
+            # --- Problema / Observações ---
             if (ss.problema_encontrado or "").strip():
                 insert_textbox(target, ["PROBLEMA ENCONTRADO", "Problema Encontrado"],
                                ss.problema_encontrado, width=540, y_offset=20, height=160, fontsize=10)
@@ -307,7 +366,7 @@ def render():
                 insert_textbox(target, ["OBSERVAÇÕES", "Observacoes", "Observações"],
                                ss.observacoes, width=540, y_offset=20, height=160, fontsize=10)
 
-            # Fotos do gateway: 1 página por foto
+            # ===== Fotos do gateway: 1 página por foto =====
             for b in ss.fotos_gateway:
                 if not b:
                     continue
