@@ -1,4 +1,4 @@
-# repo/rat_oi_cpe.py — topo LIMPO (sem tabs / sem BOM)
+# repo/rat_oi_cpe.py — RAT OI CPE (preenchimento ancorado, assinaturas +3cm)
 
 # --- PATH FIX: permite importar common/ e pdf_templates/ a partir da raiz ---
 import os
@@ -20,21 +20,98 @@ from common.state import init_defaults
 from common.ui import assinatura_dupla_png, foto_gateway_uploader
 from common.pdf import (
     open_pdf_template, search_once, insert_right_of, insert_textbox, mark_X_left_of,
-    insert_signature_png, add_image_page, CM,
-    insert_right_of_on, insert_textbox_on, mark_X_left_of_on, insert_signature_png_on
+    insert_signature_png, add_image_page, CM
 )
 
 PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
-PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_OI_CPE_NOVO.pdf")
+PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT OI CPE NOVO.pdf")
 
 
+# ===================== Helpers locais =====================
 
+def _find_any(page, labels, occurrence=1):
+    """
+    Busca a 'occurrence'-ésima ocorrência de qualquer label na lista.
+    Retorna o primeiro Rect correspondente ou None.
+    """
+    if isinstance(labels, str):
+        labels = [labels]
+    occ = 0
+    for txt in labels:
+        try:
+            rs = page.search_for(txt)
+        except Exception:
+            rs = []
+        for r in rs:
+            occ += 1
+            if occ == occurrence:
+                return r
+    return None
+
+
+def insert_equip_table(page, rows, row_height=18, dy_header=42, fontsize=10):
+    """
+    Preenche a grade 'EQUIPAMENTOS NO CLIENTE' célula a célula.
+    Usa as âncoras dos títulos de coluna e escreve as linhas para baixo.
+    Evita sobrepor o cabeçalho da tabela.
+    """
+    if not rows:
+        return
+
+    # âncora do bloco para referência
+    blk_anchor = _find_any(page, ["EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente"])
+    if not blk_anchor:
+        return
+
+    # cabeçalhos das 4 colunas
+    tipo_r = _find_any(page, ["Tipo"])
+    ns_r   = _find_any(page, ["Nº de Série", "No de Serie", "Nº de Serie", "N° de Série"])
+    fab_r  = _find_any(page, ["Fabricante"])
+    st_r   = _find_any(page, ["Status"])
+
+    # fallback se não achar algum cabeçalho
+    if not (tipo_r and ns_r and fab_r and st_r):
+        base_x = blk_anchor.x0 + 12
+        y0 = blk_anchor.y1 + dy_header
+        xs = [base_x, base_x + 160, base_x + 320, base_x + 460]
+    else:
+        # inicie um pouco abaixo da linha dos cabeçalhos
+        y0 = max(tipo_r.y1, ns_r.y1, fab_r.y1, st_r.y1) + (dy_header - 20)
+        xs = [tipo_r.x0, ns_r.x0, fab_r.x0, st_r.x0]
+
+    for i, r in enumerate(rows):
+        y = y0 + i * row_height
+        vals = [
+            r.get("tipo", ""),
+            r.get("numero_serie", ""),
+            r.get("fabricante", ""),
+            r.get("status", ""),
+        ]
+        for x, val in zip(xs, vals):
+            if val:
+                page.insert_text((x + 4, y), str(val), fontsize=fontsize)
+
+
+def _normalize_equip_rows(rows):
+    """
+    Garante que toda linha tenha as 4 chaves, evitando apagar colunas ao editar.
+    """
+    out = []
+    for r in rows or []:
+        out.append({
+            "tipo": r.get("tipo", ""),
+            "numero_serie": r.get("numero_serie", ""),
+            "fabricante": r.get("fabricante", ""),
+            "status": r.get("status", ""),
+        })
+    if not out:
+        out = [{"tipo": "", "numero_serie": "", "fabricante": "", "status": ""}]
+    return out
+
+
+# ===================== UI + Geração =====================
 
 def render():
-    import streamlit as st
-    from io import BytesIO
-    from datetime import date, time
-
     st.header("🔌 RAT OI CPE NOVO")
 
     # ---------- Estado inicial ----------
@@ -122,25 +199,10 @@ def render():
         # Captura das assinaturas (PNG com transparência)
         assinatura_dupla_png()  # popula ss.sig_tec_png e ss.sig_cli_png
 
-      # 4) Equipamentos no Cliente (dinâmico)
+    # ---------- 4) Equipamentos ----------
     with st.expander("4) Equipamentos no Cliente", expanded=True):
         st.caption("Preencha ao menos 1 linha.")
-        # garante chaves em todas as linhas
-        def _norm_rows(rows):
-            out = []
-            for r in rows or []:
-                out.append({
-                    "tipo": r.get("tipo", ""),
-                    "numero_serie": r.get("numero_serie", ""),
-                    "fabricante": r.get("fabricante", ""),
-                    "status": r.get("status", ""),
-                })
-            if not out:
-                out = [{"tipo":"", "numero_serie":"", "fabricante":"", "status":""}]
-            return out
-
-        ss.equip_cli = _norm_rows(ss.equip_cli)
-
+        ss.equip_cli = _normalize_equip_rows(ss.equip_cli)
         data = st.data_editor(
             ss.equip_cli,
             num_rows="dynamic",
@@ -153,8 +215,7 @@ def render():
                 "status": st.column_config.TextColumn("Status"),
             },
         )
-        ss.equip_cli = _norm_rows(data)
-
+        ss.equip_cli = _normalize_equip_rows(data)
 
     # ---------- 5) Problema / Observações ----------
     with st.expander("5) Problema Encontrado & Observações", expanded=True):
@@ -165,102 +226,62 @@ def render():
     with st.expander("6) Foto do Gateway", expanded=True):
         foto_gateway_uploader()  # adiciona bytes das imagens em ss.fotos_gateway
 
-def _find_any(page, labels, occurrence=1):
-    if isinstance(labels, str):
-        labels = [labels]
-    occ = 0
-    for txt in labels:
-        rs = page.search_for(txt)
-        for r in rs:
-            occ += 1
-            if occ == occurrence:
-                return r
-    return None
-
-def insert_equip_table(page, rows, row_height=18, dy_header=42, fontsize=10):
-    """
-    Preenche a grade 'EQUIPAMENTOS NO CLIENTE' célula a célula.
-    Usa as âncoras dos cabeçalhos para definir as colunas e itera linhas para baixo.
-    """
-    if not rows:
-        return
-
-    # âncora do bloco (para posicionar abaixo do título)
-    blk_anchor = _find_any(page, ["EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente"])
-    if not blk_anchor:
-        return
-
-    # cabeçalhos das 4 colunas
-    tipo_r   = _find_any(page, ["Tipo"])
-    ns_r     = _find_any(page, ["Nº de Série","No de Serie","Nº de Serie","N° de Série"])
-    fab_r    = _find_any(page, ["Fabricante"])
-    st_r     = _find_any(page, ["Status"])
-
-    if not (tipo_r and ns_r and fab_r and st_r):
-        # fallback: usa offsets aproximados a partir do título
-        base_x = blk_anchor.x0 + 12
-        y0 = blk_anchor.y1 + dy_header
-        xs = [base_x, base_x + 160, base_x + 320, base_x + 460]
-    else:
-        y0 = max(tipo_r.y1, ns_r.y1, fab_r.y1, st_r.y1) + (dy_header - 20)
-        xs = [tipo_r.x0, ns_r.x0, fab_r.x0, st_r.x0]
-
-    for i, r in enumerate(rows):
-        y = y0 + i * row_height
-        vals = [
-            r.get("tipo",""),
-            r.get("numero_serie",""),
-            r.get("fabricante",""),
-            r.get("status",""),
-        ]
-        for x, val in zip(xs, vals):
-            if val:
-                page.insert_text((x + 4, y), str(val), fontsize=fontsize)
-
     # ---------- Geração do PDF ----------
     if st.button("🧾 Gerar PDF (OI CPE)"):
         try:
             # Abre o template
             doc, page1 = open_pdf_template(PDF_BASE_PATH, hint="RAT OI CPE NOVO")
             has_p2 = doc.page_count >= 2
-            page2 = doc[1] if has_p2 else page1  # alvo dos blocos “parte 2”
+            page2 = doc[1] if has_p2 else page1  # alvo dos blocos pós-cabeçalho
 
             # ====== PÁGINA 1: Cabeçalho + Serviços ======
             insert_right_of(page1, ["Cliente"], ss.cliente, dx=8, dy=1)
             insert_right_of(page1, ["Número do Bilhete", "Numero do Bilhete"], ss.numero_chamado, dx=8, dy=1)
             insert_right_of(page1, ["Designação do Circuito", "Designacao do Circuito"], ss.numero_chamado, dx=8, dy=1)
 
-            insert_right_of(page1, ["Horário Início", "Horario Inicio", "Horario Início"], ss.hora_inicio.strftime("%H:%M"), dx=8, dy=1)
-            insert_right_of(page1, ["Horário Término", "Horario Termino", "Horário termino"], ss.hora_termino.strftime("%H:%M"), dx=8, dy=1)
+            insert_right_of(page1, ["Horário Início", "Horario Inicio", "Horario Início"],
+                            ss.hora_inicio.strftime("%H:%M"), dx=8, dy=1)
+            insert_right_of(page1, ["Horário Término", "Horario Termino", "Horário termino"],
+                            ss.hora_termino.strftime("%H:%M"), dx=8, dy=1)
 
-            # Serviços – marcar “X” à esquerda dos labels (na página 1)
+            # Serviços – marcar X na página 1
             if ss.svc_instalacao:
                 mark_X_left_of(page1, "Instalação", dx=-16, dy=0)
             if ss.svc_retirada:
                 mark_X_left_of(page1, "Retirada", dx=-16, dy=0)
             if ss.svc_vistoria:
-                mark_X_left_of(page1, "Vistoria Técnica", dx=-16, dy=0); mark_X_left_of(page1, "Vistoria Tecnica", dx=-16, dy=0)
+                mark_X_left_of(page1, "Vistoria Técnica", dx=-16, dy=0)
+                mark_X_left_of(page1, "Vistoria Tecnica", dx=-16, dy=0)
             if ss.svc_alteracao:
-                mark_X_left_of(page1, "Alteração Técnica", dx=-16, dy=0); mark_X_left_of(page1, "Alteracao Tecnica", dx=-16, dy=0)
+                mark_X_left_of(page1, "Alteração Técnica", dx=-16, dy=0)
+                mark_X_left_of(page1, "Alteracao Tecnica", dx=-16, dy=0)
             if ss.svc_mudanca:
-                mark_X_left_of(page1, "Mudança de Endereço", dx=-16, dy=0); mark_X_left_of(page1, "Mudanca de Endereco", dx=-16, dy=0)
+                mark_X_left_of(page1, "Mudança de Endereço", dx=-16, dy=0)
+                mark_X_left_of(page1, "Mudanca de Endereco", dx=-16, dy=0)
             if ss.svc_teste_conjunto:
                 mark_X_left_of(page1, "Teste em conjunto", dx=-16, dy=0)
             if ss.svc_servico_interno:
-                mark_X_left_of(page1, "Serviço interno", dx=-16, dy=0); mark_X_left_of(page1, "Servico interno", dx=-16, dy=0)
+                mark_X_left_of(page1, "Serviço interno", dx=-16, dy=0)
+                mark_X_left_of(page1, "Servico interno", dx=-16, dy=0)
 
-            # ====== ALVO PARA BLOCO 2 (página 2 se existir; senão, página 1) ======
+            # ====== Alvo dos blocos “parte 2” (page2 se existir) ======
             target = page2
 
             # Identificação – Aceite (textos)
-            insert_right_of(target, ["Técnico", "Tecnico"], ss.tecnico_nome, dx=8, dy=1)
-            insert_right_of(target, ["Cliente Ciente"], ss.cliente_ciente_nome, dx=8, dy=1)
-            insert_right_of(target, ["Contato"], ss.contato, dx=8, dy=1)
-            insert_right_of(target, ["Data"], ss.data_aceite.strftime("%d/%m/%Y"), dx=8, dy=1)
-            insert_right_of(target, ["Horário", "Horario"], ss.horario_aceite.strftime("%H:%M"), dx=8, dy=1)
-            insert_right_of(target, ["Aceitação do serviço", "Aceitacao do servico"], ss.aceitacao_resp, dx=8, dy=1)
+            insert_right_of(target, ["Técnico:", "Tecnico:", "Técnico", "Tecnico"],
+                            ss.tecnico_nome, dx=8, dy=1)
+            insert_right_of(target, ["Cliente Ciente:", "Cliente Ciente"],
+                            ss.cliente_ciente_nome, dx=8, dy=1)
+            insert_right_of(target, ["Contato:", "Contato"],
+                            ss.contato, dx=8, dy=1)
+            insert_right_of(target, ["Data:", "Data"],
+                            ss.data_aceite.strftime("%d/%m/%Y"), dx=8, dy=1)
+            insert_right_of(target, ["Horário:", "Horario:", "Horário", "Horario"],
+                            ss.horario_aceite.strftime("%H:%M"), dx=8, dy=1)
+            insert_right_of(target, ["Aceitação do serviço", "Aceitacao do servico"],
+                            ss.aceitacao_resp, dx=8, dy=1)
 
-            # Teste WAN — marque X (S / N / N/A)
+            # Teste WAN — X em S/N/NA
             if ss.teste_wan == "S":
                 mark_X_left_of(target, "S", dx=-12, dy=0, occurrence=1)
             elif ss.teste_wan == "N":
@@ -268,31 +289,25 @@ def insert_equip_table(page, rows, row_height=18, dy_header=42, fontsize=10):
             else:
                 mark_X_left_of(target, "N/A", dx=-12, dy=0, occurrence=1)
 
-            # ===== Assinaturas — subir 3 cm =====
-            up3 = 3 * CM  # 3 centímetros para cima
-            # retângulos: (dx0, dy0, dx1, dy1) relativos à âncora "Assinatura"
+            # Assinaturas — subir 3 cm
+            up3 = 3 * CM
             insert_signature_png(target, ["Assinatura"], ss.sig_tec_png,
                                  (80, 20 - up3, 280, 90 - up3), occurrence=1)
             insert_signature_png(target, ["Assinatura"], ss.sig_cli_png,
                                  (80, 20 - up3, 280, 90 - up3), occurrence=2)
 
-                    # ===== Equipamentos no Cliente =====
+            # Equipamentos no Cliente (tabela)
             insert_equip_table(target, ss.equip_cli, row_height=18, dy_header=42, fontsize=10)
 
-            # ===== Problema / Observações =====
+            # Problema / Observações
             if (ss.problema_encontrado or "").strip():
-                insert_textbox(target,
-                               ["PROBLEMA ENCONTRADO", "Problema Encontrado"],
-                               ss.problema_encontrado,
-                               width=540, y_offset=20, height=160, fontsize=10)
+                insert_textbox(target, ["PROBLEMA ENCONTRADO", "Problema Encontrado"],
+                               ss.problema_encontrado, width=540, y_offset=20, height=160, fontsize=10)
             if (ss.observacoes or "").strip():
-                insert_textbox(target,
-                               ["OBSERVAÇÕES", "Observacoes", "Observações"],
-                               ss.observacoes,
-                               width=540, y_offset=20, height=160, fontsize=10)
+                insert_textbox(target, ["OBSERVAÇÕES", "Observacoes", "Observações"],
+                               ss.observacoes, width=540, y_offset=20, height=160, fontsize=10)
 
-
-            # ===== Fotos do gateway: 1 página por foto (depois do template) =====
+            # Fotos do gateway: 1 página por foto
             for b in ss.fotos_gateway:
                 if not b:
                     continue
