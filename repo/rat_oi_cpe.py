@@ -143,7 +143,7 @@ def _normalize_equip_rows(rows):
             "status": r.get("status", ""),
         })
     if not out:
-        out = [{"tipo": "", "numero_serie": "", "fabricante": "", "modelo": "", "status": ""}]
+        out = [{"tipo": "", "numero_serie": "", "modelo": "", "status": ""}]
     return out
 
 def equipamentos_texto(rows):
@@ -154,7 +154,7 @@ def equipamentos_texto(rows):
     rows = _normalize_equip_rows(rows)
     linhas = []
     for it in rows:
-        if not (it.get("tipo") or it.get("numero_serie") or it.get("fabricante") or it.get("modelo") or it.get("status")):
+        if not (it.get("tipo") or it.get("numero_serie") or it.get("modelo") or it.get("status")):
             continue
         linhas.append(
             f"- Tipo: {it.get('tipo','')} | Nº Série: {it.get('numero_serie','')} | 
@@ -196,7 +196,7 @@ def render():
         "sig_cli_png": None,
 
         # Equipamentos
-        "equip_cli": [{"tipo": "", "numero_serie": "", "fabricante": "", "modelo": "", "status": ""}],
+        "equip_cli": [{"tipo": "", "numero_serie": "", "modelo": "", "status": ""}],
 
         # Textos
         "problema_encontrado": "",
@@ -277,7 +277,6 @@ def render():
             column_config={
                 "tipo": st.column_config.TextColumn("Tipo"),
                 "numero_serie": st.column_config.TextColumn("Nº de Série"),
-                "fabricante": st.column_config.TextColumn("Fabricante"),
                 "modelo": st.column_config.SelectboxColumn("Modelo", options=modelo_opts, required=False, help="aligera / SynWay"),
                 "status": st.column_config.SelectboxColumn("Status", options=status_opts, required=False),
             },
