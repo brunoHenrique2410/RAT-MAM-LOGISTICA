@@ -139,7 +139,6 @@ def _normalize_equip_rows(rows):
         out.append({
             "tipo": r.get("tipo", ""),
             "numero_serie": r.get("numero_serie", ""),
-            "fabricante": r.get("fabricante", ""),
             "modelo": r.get("modelo", ""),
             "status": r.get("status", ""),
         })
@@ -158,8 +157,8 @@ def equipamentos_texto(rows):
         if not (it.get("tipo") or it.get("numero_serie") or it.get("fabricante") or it.get("modelo") or it.get("status")):
             continue
         linhas.append(
-            f"- Tipo: {it.get('tipo','')} | Nº Série: {it.get('numero_serie','')} | "
-            f"Fab: {it.get('fabricante','')} | Mod: {it.get('modelo','')} | Status: {it.get('status','')}"
+            f"- Tipo: {it.get('tipo','')} | Nº Série: {it.get('numero_serie','')} | 
+           | Mod: {it.get('modelo','')} | Status: {it.get('status','')}"
         )
     return "\n".join(linhas)
 
