@@ -158,7 +158,7 @@ def equipamentos_texto(rows):
             continue
         linhas.append(
             f"- Tipo: {it.get('tipo','')} | Nº Série: {it.get('numero_serie','')} | 
-           | Mod: {it.get('modelo','')} | Status: {it.get('status','')}"
+                   | Mod: {it.get('modelo','')} | Status: {it.get('status','')}"
         )
     return "\n".join(linhas)
 
