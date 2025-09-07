@@ -287,7 +287,7 @@ def render():
 
     # ---------- 5) Produtividade / Textos ----------
     with st.expander("5) Produtividade & Textos", expanded=True):
-        ss.produtivo = st.selectbox("Produtivo?", ["sim-totalmente produtivo", "sim-com BA", "não-improdutivo"], index=["sim-totalmente produtivo", "sim-com BA", "não-improdutivo"].index(ss.produtivo))
+        ss.produtivo = st.selectbox("Produtivo ?", ["sim-totalmente produtivo", "sim-com BA", "não-improdutivo"], index=["sim-totalmente produtivo", "sim-com BA", "não-improdutivo"].index(ss.produtivo))
         if ss.produtivo == "sim-com BA":
             ss.ba_num = st.text_input("Informe o nº do BA (obrigatório para 'sim-com BA')", value=ss.ba_num)
         else:
@@ -410,7 +410,7 @@ def render():
                 obs_lines.append(f"Produtivo: {ss.produtivo}")
             # anexa acompanhamento do suporte MAM
             if (ss.suporte_mam or "").strip():
-                obs_lines[-1] = obs_lines[-1] + f" – acompanhado pelo analista {ss.suporte_mam}"
+                obs_lines[-1] = obs_lines[-1] + f" – acompanhado pelo(a) analista {ss.suporte_mam}"
             else:
                 obs_lines[-1] = obs_lines[-1] + " – acompanhado pelo analista"
 
