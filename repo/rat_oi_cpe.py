@@ -23,7 +23,7 @@ from common.pdf import (
 )
 
 PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
-PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT OI CPE NOVO.pdf")
+PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_OI_CPE_NOVO.pdf")
 
 
 # ===================== Helpers de busca / região =====================
