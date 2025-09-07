@@ -1,4 +1,4 @@
-# repo/rat_oi_cpe.py — RAT OI CPE (ancoras por REGIÃO, assinaturas +3 cm, equipamentos como texto)
+# repo/rat_oi_cpe.py — RAT OI CPE (região IDENTIFICAÇÃO – ACEITE, assinaturas +3 cm, equipamentos texto, regras produtivo/BA/motivo)
 
 # --- PATH FIX: permite importar common/ e pdf_templates/ a partir da raiz ---
 import os
@@ -25,11 +25,9 @@ from common.pdf import (
 PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
 PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_OI_CPE_NOVO.pdf")
 
-
 # ===================== Helpers de busca / região =====================
 
 def _first_hit(page, labels):
-    """Primeira ocorrência de qualquer label (Rect) na página."""
     if isinstance(labels, str):
         labels = [labels]
     for lbl in labels:
@@ -41,9 +39,7 @@ def _first_hit(page, labels):
             return hits[0]
     return None
 
-
 def _all_hits(page, labels):
-    """Todas as ocorrências (lista de Rects) para qualquer label."""
     rects = []
     if isinstance(labels, str):
         labels = [labels]
@@ -54,12 +50,9 @@ def _all_hits(page, labels):
             pass
     return rects
 
-
 def _find_region_between(page, start_labels, end_labels):
     """
-    Retorna uma 'região' (x0,y0,x1,y1) da página:
-      - y0 = base do título/âncora de start_labels
-      - y1 = topo do primeiro end_labels encontrado abaixo; se não achar, vai até o fim da página.
+    Região (x0,y0,x1,y1) desde o título 'start' até o início do próximo bloco 'end'.
     """
     start = _first_hit(page, start_labels)
     if not start:
@@ -69,19 +62,15 @@ def _find_region_between(page, start_labels, end_labels):
     y_bottom = min([r.y0 for r in ends], default=page.rect.y1)
     return (page.rect.x0, y_top, page.rect.x1, y_bottom)
 
-
 def _rect_center(r):
     return ((r.x0 + r.x1) / 2.0, (r.y0 + r.y1) / 2.0)
-
 
 def _rect_in_region(r, region):
     x0, y0, x1, y1 = region
     cx, cy = _rect_center(r)
     return (x0 <= cx <= x1) and (y0 <= cy <= y1)
 
-
 def insert_right_of_in_region(page, region, field_labels, content, dx=8, dy=1, fontsize=10):
-    """Insere à direita do rótulo mais próximo, limitado à 'region' (tuple x0,y0,x1,y1)."""
     if not content or not region:
         return
     if isinstance(field_labels, str):
@@ -99,9 +88,7 @@ def insert_right_of_in_region(page, region, field_labels, content, dx=8, dy=1, f
     y = target.y0 + target.height / 1.5 + dy
     page.insert_text((x, y), str(content), fontsize=fontsize)
 
-
 def mark_X_left_of_in_region(page, region, field_labels, dx=-12, dy=0, fontsize=12):
-    """Marca 'X' à esquerda do rótulo, limitado à região."""
     if not region:
         return
     if isinstance(field_labels, str):
@@ -117,18 +104,15 @@ def mark_X_left_of_in_region(page, region, field_labels, dx=-12, dy=0, fontsize=
     target = min(candidates, key=lambda r: (r.y0 - y_top, abs(r.x0 - region[0])))
     page.insert_text((target.x0 + dx, target.y0 + dy), "X", fontsize=fontsize)
 
-
 def insert_signature_png_in_region(page, region, label_variants, png_bytes, rel_rect, occurrence=1):
     """
-    Insere assinatura (PNG) procurando o label (ex.: 'Assinatura') SOMENTE dentro da região.
-    rel_rect é relativo ao âncora: (x0, dy0, x1, dy1), onde x0/x1 são relativos ao x0 do label
-    e dy0/dy1 relativos ao y1 do label (logo abaixo do rótulo).
+    Insere assinatura (PNG) procurando 'Assinatura' SOMENTE dentro da região.
+    rel_rect relativo ao label: (x0, dy0, x1, dy1) somados ao x0/y1 da âncora.
     """
     if not png_bytes or not region:
         return
     if isinstance(label_variants, str):
         label_variants = [label_variants]
-
     anchors = []
     for lbl in label_variants:
         for r in page.search_for(lbl):
@@ -139,50 +123,45 @@ def insert_signature_png_in_region(page, region, label_variants, png_bytes, rel_
     anchors = sorted(anchors, key=lambda r: (r.y0, r.x0))
     idx = max(0, min(len(anchors) - 1, occurrence - 1))
     base = anchors[idx]
-
     x0 = base.x0 + rel_rect[0]
     y0 = base.y1 + rel_rect[1]
     x1 = base.x0 + rel_rect[2]
     y1 = base.y1 + rel_rect[3]
     rect = fitz.Rect(x0, y0, x1, y1)
-
     page.insert_image(rect, stream=png_bytes, keep_proportion=True)
 
-
-# ===================== Helpers de conteúdo =====================
+# ===================== Equipamentos =====================
 
 def _normalize_equip_rows(rows):
-    """Garante que toda linha tenha as 4 chaves, evitando apagar colunas ao editar."""
+    """Garante chaves fixas e evita perda de valores ao editar."""
     out = []
     for r in rows or []:
         out.append({
             "tipo": r.get("tipo", ""),
             "numero_serie": r.get("numero_serie", ""),
             "fabricante": r.get("fabricante", ""),
+            "modelo": r.get("modelo", ""),
             "status": r.get("status", ""),
         })
     if not out:
-        out = [{"tipo": "", "numero_serie": "", "fabricante": "", "status": ""}]
+        out = [{"tipo": "", "numero_serie": "", "fabricante": "", "modelo": "", "status": ""}]
     return out
-
 
 def equipamentos_texto(rows):
     """
-    Constrói um texto simples (sem CSV) para o bloco 'EQUIPAMENTOS NO CLIENTE',
-    uma linha por item.
-    Ex.: "- Tipo: ONT | Nº Série: ABC123 | Fabricante: XYZ | Status: OK"
+    Texto simples para o bloco 'EQUIPAMENTOS NO CLIENTE' (não redesenha tabela).
+    Ex.: "- Tipo: ONT | Nº Série: ABC | Fab: XYZ | Mod: SynWay | Status: instalado pelo técnico"
     """
     rows = _normalize_equip_rows(rows)
     linhas = []
     for it in rows:
-        if not (it.get("tipo") or it.get("numero_serie") or it.get("fabricante") or it.get("status")):
+        if not (it.get("tipo") or it.get("numero_serie") or it.get("fabricante") or it.get("modelo") or it.get("status")):
             continue
         linhas.append(
             f"- Tipo: {it.get('tipo','')} | Nº Série: {it.get('numero_serie','')} | "
-            f"Fabricante: {it.get('fabricante','')} | Status: {it.get('status','')}"
+            f"Fab: {it.get('fabricante','')} | Mod: {it.get('modelo','')} | Status: {it.get('status','')}"
         )
     return "\n".join(linhas)
-
 
 # ===================== UI + Geração =====================
 
@@ -191,6 +170,7 @@ def render():
 
     # ---------- Estado inicial ----------
     init_defaults({
+        # Cabeçalho
         "cliente": "",
         "numero_chamado": "",
         "hora_inicio": time(8, 0),
@@ -206,7 +186,7 @@ def render():
         "svc_servico_interno": False,
 
         # Identificação – Aceite
-        "teste_wan": "NA",
+        "teste_wan": "NA",  # (UI renomeada: "Teste final com equipamento do cliente?")
         "tecnico_nome": "",
         "cliente_ciente_nome": "",
         "contato": "",
@@ -216,12 +196,18 @@ def render():
         "sig_tec_png": None,
         "sig_cli_png": None,
 
-        # Tabela Equipamentos
-        "equip_cli": [{"tipo": "", "numero_serie": "", "fabricante": "", "status": ""}],
+        # Equipamentos
+        "equip_cli": [{"tipo": "", "numero_serie": "", "fabricante": "", "modelo": "", "status": ""}],
 
         # Textos
         "problema_encontrado": "",
         "observacoes": "",
+
+        # Produtividade / suporte
+        "suporte_mam": "",
+        "produtivo": "sim-totalmente produtivo",
+        "ba_num": "",
+        "motivo_improdutivo": "",
 
         # Fotos (gateway)
         "fotos_gateway": [],
@@ -234,11 +220,11 @@ def render():
         c1, c2 = st.columns(2)
         with c1:
             ss.cliente = st.text_input("Cliente", value=ss.cliente)
-            ss.numero_chamado = st.text_input("Número do Chamado", value=ss.numero_chamado)
+            ss.numero_chamado = st.text_input("Número do Chamado (preenche Bilhete/Designação)", value=ss.numero_chamado)
             ss.hora_inicio = st.time_input("Horário Início", value=ss.hora_inicio)
         with c2:
-            st.caption("“Número do Bilhete” e “Designação do Circuito” receberão o Nº do Chamado.")
             ss.hora_termino = st.time_input("Horário Término", value=ss.hora_termino)
+            ss.suporte_mam = st.text_input("Nome do suporte MAM", value=ss.suporte_mam)
 
     # ---------- 2) Serviços ----------
     with st.expander("2) Serviços e Atividades Solicitadas", expanded=True):
@@ -257,7 +243,7 @@ def render():
     # ---------- 3) Identificação – Aceite ----------
     with st.expander("3) Identificação – Aceite da Atividade", expanded=True):
         ss.teste_wan = st.radio(
-            "Teste de conectividade WAN realizado com sucesso?",
+            "Teste final com equipamento do cliente?",
             ["S", "N", "NA"],
             index=["S", "N", "NA"].index(ss.teste_wan)
         )
@@ -271,13 +257,19 @@ def render():
             ss.horario_aceite = st.time_input("Horário", value=ss.horario_aceite)
             ss.aceitacao_resp = st.text_input("Aceitação do serviço pelo responsável", value=ss.aceitacao_resp)
 
-        # Captura das assinaturas (PNG com transparência)
-        assinatura_dupla_png()  # ss.sig_tec_png / ss.sig_cli_png
+        # Assinaturas (PNG com transparência) — armazenadas em ss.sig_tec_png / ss.sig_cli_png
+        assinatura_dupla_png()
 
-    # ---------- 4) Equipamentos ----------
+    # ---------- 4) Equipamentos no Cliente ----------
     with st.expander("4) Equipamentos no Cliente", expanded=True):
-        st.caption("Preencha ao menos 1 linha.")
+        st.caption("Preencha ao menos 1 linha. (Modelo e Status têm opções fixas.)")
         ss.equip_cli = _normalize_equip_rows(ss.equip_cli)
+
+        # As colunas Select para 'modelo' e 'status'
+        modelo_opts = ["", "aligera", "SynWay"]
+        status_opts = ["", "equipamento no local", "instalado pelo técnico", "retirado pelo técnico",
+                       "spare técnico", "técnico não levou equipamento"]
+
         data = st.data_editor(
             ss.equip_cli,
             num_rows="dynamic",
@@ -287,19 +279,30 @@ def render():
                 "tipo": st.column_config.TextColumn("Tipo"),
                 "numero_serie": st.column_config.TextColumn("Nº de Série"),
                 "fabricante": st.column_config.TextColumn("Fabricante"),
-                "status": st.column_config.TextColumn("Status"),
+                "modelo": st.column_config.SelectboxColumn("Modelo", options=modelo_opts, required=False, help="aligera / SynWay"),
+                "status": st.column_config.SelectboxColumn("Status", options=status_opts, required=False),
             },
         )
         ss.equip_cli = _normalize_equip_rows(data)
 
-    # ---------- 5) Problema / Observações ----------
-    with st.expander("5) Problema Encontrado & Observações", expanded=True):
-        ss.problema_encontrado = st.text_area("Problema Encontrado", value=ss.problema_encontrado, height=120)
-        ss.observacoes = st.text_area("Observações", value=ss.observacoes, height=120)
+    # ---------- 5) Produtividade / Textos ----------
+    with st.expander("5) Produtividade & Textos", expanded=True):
+        ss.produtivo = st.selectbox("Produtivo?", ["sim-totalmente produtivo", "sim-com BA", "não-improdutivo"], index=["sim-totalmente produtivo", "sim-com BA", "não-improdutivo"].index(ss.produtivo))
+        if ss.produtivo == "sim-com BA":
+            ss.ba_num = st.text_input("Informe o nº do BA (obrigatório para 'sim-com BA')", value=ss.ba_num)
+        else:
+            ss.ba_num = st.text_input("Informe o nº do BA (se aplicável)", value=ss.ba_num)
+        if ss.produtivo == "não-improdutivo":
+            ss.motivo_improdutivo = st.text_input("Motivo da improdutividade (obrigatório para 'não-improdutivo')", value=ss.motivo_improdutivo)
+        else:
+            ss.motivo_improdutivo = st.text_input("Motivo da improdutividade (se aplicável)", value=ss.motivo_improdutivo)
+
+        ss.problema_encontrado = st.text_area("Problema Encontrado (texto adicional)", value=ss.problema_encontrado, height=100)
+        ss.observacoes = st.text_area("Observações (texto adicional)", value=ss.observacoes, height=100)
 
     # ---------- 6) Foto(s) do Gateway ----------
     with st.expander("6) Foto do Gateway", expanded=True):
-        foto_gateway_uploader()
+        foto_gateway_uploader()  # preenche ss.fotos_gateway
 
     # ---------- Geração do PDF ----------
     if st.button("🧾 Gerar PDF (OI CPE)"):
@@ -319,58 +322,59 @@ def render():
 
             if ss.svc_instalacao:      mark_X_left_of(page1, "Instalação", dx=-16, dy=0)
             if ss.svc_retirada:        mark_X_left_of(page1, "Retirada", dx=-16, dy=0)
-            if ss.svc_vistoria:        mark_X_left_of(page1, "Vistoria Técnica", dx=-16, dy=0); mark_X_left_of(page1, "Vistoria Tecnica", dx=-16, dy=0)
-            if ss.svc_alteracao:       mark_X_left_of(page1, "Alteração Técnica", dx=-16, dy=0); mark_X_left_of(page1, "Alteracao Tecnica", dx=-16, dy=0)
+            if ss.svc_vistoria:        mark_X_left_of(page1, "Vistoria Tecnica", dx=-16, dy=0); mark_X_left_of(page1, "Vistoria Técnica", dx=-16, dy=0)
+            if ss.svc_alteracao:       mark_X_left_of(page1, "Alteração Tecnica", dx=-16, dy=0); mark_X_left_of(page1, "Alteração Técnica", dx=-16, dy=0)
             if ss.svc_mudanca:         mark_X_left_of(page1, "Mudança de Endereço", dx=-16, dy=0); mark_X_left_of(page1, "Mudanca de Endereco", dx=-16, dy=0)
             if ss.svc_teste_conjunto:  mark_X_left_of(page1, "Teste em conjunto", dx=-16, dy=0)
-            if ss.svc_servico_interno: mark_X_left_of(page1, "Serviço interno", dx=-16, dy=0);    mark_X_left_of(page1, "Servico interno", dx=-16, dy=0)
+            if ss.svc_servico_interno: mark_X_left_of(page1, "Serviço interno", dx=-16, dy=0); mark_X_left_of(page1, "Servico interno", dx=-16, dy=0)
 
             # ===== PARTE 2 (normalmente página 2): Identificação – Aceite / Equip / Textos =====
             target = page2
 
-            # REGIÃO "Identificação – Aceite da Atividade"
+            # REGIÃO "Identificação – Aceite da Atividade" (título conforme seu PDF)
             ident_region = _find_region_between(
                 target,
                 start_labels=[
                     "Identificação – Aceite da Atividade",
-                    "Identificacao - Aceite da Atividade",
                     "IDENTIFICAÇÃO – ACEITE DA ATIVIDADE",
+                    "Identificacao - Aceite da Atividade",
                     "IDENTIFICACAO - ACEITE DA ATIVIDADE",
                 ],
                 end_labels=[
                     "EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente",
+                    "INFORMAÇÕES TECNICAS DO CIRCUITO", "INFORMACOES TECNICAS DO CIRCUITO",
                     "PROBLEMA ENCONTRADO", "Problema Encontrado",
                     "OBSERVAÇÕES", "Observacoes", "Observações",
                 ],
             )
 
-            # Campos de texto ANCORADOS À REGIÃO (com/sem “:”, com/sem acento)
+            # Campos na região (labels conforme o template)
             insert_right_of_in_region(target, ident_region,
-                ["Técnico:", "Tecnico:", "Técnico", "Tecnico"],
+                ["Técnico", "Tecnico", "Técnico:", "Tecnico:"],
                 ss.tecnico_nome, dx=8, dy=1)
 
             insert_right_of_in_region(target, ident_region,
-                ["Cliente Ciente:", "Cliente Ciente", "Cliente  Ciente"],
+                ["Cliente Ciente", "Cliente  Ciente", "Cliente Ciente:"],
                 ss.cliente_ciente_nome, dx=8, dy=1)
 
             insert_right_of_in_region(target, ident_region,
-                ["Contato:", "Contato"],
+                ["Contato", "Contato:"],
                 ss.contato, dx=8, dy=1)
 
             insert_right_of_in_region(target, ident_region,
-                ["Data:", "Data"],
+                ["Data", "Data:"],
                 ss.data_aceite.strftime("%d/%m/%Y"), dx=8, dy=1)
 
             insert_right_of_in_region(target, ident_region,
-                ["Horário:", "Horario:", "Horário", "Horario"],
+                ["Horario", "Horário", "Horario:", "Horário:"],
                 ss.horario_aceite.strftime("%H:%M"), dx=8, dy=1)
 
             insert_right_of_in_region(target, ident_region,
-                ["Aceitação do serviço", "Aceitacao do servico",
-                 "Aceitação do serviço pelo responsável", "Aceitacao do servico pelo responsavel"],
+                ["Aceitação do serviço pelo responsável", "Aceitacao do servico pelo responsavel",
+                 "Aceitação do serviço", "Aceitacao do servico"],
                 ss.aceitacao_resp, dx=8, dy=1)
 
-            # Teste WAN (S/N/NA) dentro da região — tolera variações
+            # S / N / N/A na região (pergunta é "Teste de conectividade WAN..." no PDF)
             labels_S  = [" S ", "S", "Sim"]
             labels_N  = [" N ", "N", "Não", "Nao"]
             labels_NA = ["N/A", "NA", "N / A"]
@@ -381,7 +385,7 @@ def render():
             else:
                 mark_X_left_of_in_region(target, ident_region, labels_NA, dx=-12, dy=0)
 
-            # Assinaturas (sobem 3 cm) — 1ª = Técnico, 2ª = Cliente
+            # Assinaturas (sobem 3 cm)
             up3 = 3 * CM
             labels_ass = ["Assinatura", "ASSINATURA"]
             insert_signature_png_in_region(target, ident_region, labels_ass, ss.sig_tec_png,
@@ -389,7 +393,7 @@ def render():
             insert_signature_png_in_region(target, ident_region, labels_ass, ss.sig_cli_png,
                                            (80, 20 - up3, 280, 90 - up3), occurrence=2)
 
-            # "EQUIPAMENTOS NO CLIENTE" — texto simples no bloco da seção
+            # Bloco "EQUIPAMENTOS NO CLIENTE" — texto simples
             eq_text = equipamentos_texto(ss.equip_cli)
             if eq_text.strip():
                 insert_textbox(
@@ -399,13 +403,47 @@ def render():
                     width=540, y_offset=28, height=220, fontsize=9, align=0
                 )
 
-            # Problema / Observações
-            if (ss.problema_encontrado or "").strip():
+            # Regras Produtivo/BA/Motivo + textos do usuário
+            obs_lines = []
+            # injeta o valor de 'produtivo'
+            if ss.produtivo:
+                obs_lines.append(f"Produtivo: {ss.produtivo}")
+            # anexa acompanhamento do suporte MAM
+            if (ss.suporte_mam or "").strip():
+                obs_lines[-1] = obs_lines[-1] + f" – acompanhado pelo analista {ss.suporte_mam}"
+            else:
+                obs_lines[-1] = obs_lines[-1] + " – acompanhado pelo analista"
+
+            # Problema / Ação corretiva
+            problema_extra = ""
+            acao_extra = ""
+            if ss.produtivo == "sim-com BA":
+                if (ss.ba_num or "").strip():
+                    acao_extra = f"BA: {ss.ba_num}"
+                else:
+                    acao_extra = "BA: (não informado)"
+            elif ss.produtivo == "não-improdutivo":
+                if (ss.motivo_improdutivo or "").strip():
+                    problema_extra = f"Motivo: {ss.motivo_improdutivo}"
+                else:
+                    problema_extra = "Motivo: (não informado)"
+
+            # PROBLEMA ENCONTRADO
+            problema_final = "\n".join([t for t in [problema_extra, (ss.problema_encontrado or "").strip()] if t])
+            if problema_final:
                 insert_textbox(target, ["PROBLEMA ENCONTRADO", "Problema Encontrado"],
-                               ss.problema_encontrado, width=540, y_offset=20, height=160, fontsize=10)
-            if (ss.observacoes or "").strip():
+                               problema_final, width=540, y_offset=20, height=160, fontsize=10)
+
+            # AÇÃO CORRETIVA
+            if acao_extra:
+                insert_textbox(target, ["AÇÃO CORRETIVA", "Acao Corretiva", "Ação Corretiva"],
+                               acao_extra, width=540, y_offset=20, height=120, fontsize=10)
+
+            # OBSERVAÇÕES
+            obs_final = "\n".join([t for t in [("\n".join(obs_lines)).strip(), (ss.observacoes or "").strip()] if t])
+            if obs_final:
                 insert_textbox(target, ["OBSERVAÇÕES", "Observacoes", "Observações"],
-                               ss.observacoes, width=540, y_offset=20, height=160, fontsize=10)
+                               obs_final, width=540, y_offset=20, height=160, fontsize=10)
 
             # Fotos do gateway — 1 página por foto
             for b in ss.fotos_gateway:
