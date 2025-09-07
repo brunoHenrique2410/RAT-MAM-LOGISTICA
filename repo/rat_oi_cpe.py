@@ -1,4 +1,4 @@
-# repo/rat_oi_cpe.py — RAT OI CPE (preenchimento ancorado, assinaturas +3 cm)
+# repo/rat_oi_cpe.py — RAT OI CPE (ancoras por REGIÃO, assinaturas +3 cm, equipamentos como texto)
 
 # --- PATH FIX: permite importar common/ e pdf_templates/ a partir da raiz ---
 import os
@@ -13,134 +13,143 @@ if PROJECT_ROOT not in sys.path:
 from io import BytesIO
 from datetime import date, time
 import streamlit as st
+import fitz  # PyMuPDF
 
 from common.state import init_defaults
 from common.ui import assinatura_dupla_png, foto_gateway_uploader
 from common.pdf import (
     open_pdf_template, insert_right_of, insert_textbox, mark_X_left_of,
-    insert_signature_png, add_image_page, CM
+    add_image_page, CM
 )
 
 PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
-PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_OI_CPE_NOVO.pdf")
+PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT OI CPE NOVO.pdf")
 
 
-# ===================== Helpers locais =====================
+# ===================== Helpers de busca / região =====================
 
-def _find_any(page, labels, occurrence=1):
-    """Busca a 'occurrence'-ésima ocorrência de qualquer label e retorna o Rect, ou None."""
-    if isinstance(labels, str):
-        labels = [labels]
-    occ = 0
-    for txt in labels:
-        try:
-            rs = page.search_for(txt)
-        except Exception:
-            rs = []
-        for r in rs:
-            occ += 1
-            if occ == occurrence:
-                return r
-    return None
-
-
-def _find_section_anchor(page, labels):
-    """Retorna o Rect do título da seção (ex.: 'Identificação – Aceite da Atividade')."""
+def _first_hit(page, labels):
+    """Primeira ocorrência de qualquer label (Rect) na página."""
     if isinstance(labels, str):
         labels = [labels]
     for lbl in labels:
-        hits = page.search_for(lbl)
+        try:
+            hits = page.search_for(lbl)
+        except Exception:
+            hits = []
         if hits:
             return hits[0]
     return None
 
 
-def insert_right_of_in_section(page, section_anchor, field_labels, content, dx=8, dy=1, fontsize=10):
+def _all_hits(page, labels):
+    """Todas as ocorrências (lista de Rects) para qualquer label."""
+    rects = []
+    if isinstance(labels, str):
+        labels = [labels]
+    for lbl in labels:
+        try:
+            rects.extend(page.search_for(lbl))
+        except Exception:
+            pass
+    return rects
+
+
+def _find_region_between(page, start_labels, end_labels):
     """
-    Dentro de uma seção (ancorada por section_anchor), encontre a ocorrência de field_labels
-    cuja origem esteja ABAIXO da âncora e mais próxima verticalmente — e insira à direita.
+    Retorna uma 'região' (x0,y0,x1,y1) da página:
+      - y0 = base do título/âncora de start_labels
+      - y1 = topo do primeiro end_labels encontrado abaixo; se não achar, vai até o fim da página.
     """
-    if not content or not section_anchor:
+    start = _first_hit(page, start_labels)
+    if not start:
+        return None
+    y_top = start.y1
+    ends = [r for r in _all_hits(page, end_labels) if r.y0 > y_top]
+    y_bottom = min([r.y0 for r in ends], default=page.rect.y1)
+    return (page.rect.x0, y_top, page.rect.x1, y_bottom)
+
+
+def _rect_center(r):
+    return ((r.x0 + r.x1) / 2.0, (r.y0 + r.y1) / 2.0)
+
+
+def _rect_in_region(r, region):
+    x0, y0, x1, y1 = region
+    cx, cy = _rect_center(r)
+    return (x0 <= cx <= x1) and (y0 <= cy <= y1)
+
+
+def insert_right_of_in_region(page, region, field_labels, content, dx=8, dy=1, fontsize=10):
+    """Insere à direita do rótulo mais próximo, limitado à 'region' (tuple x0,y0,x1,y1)."""
+    if not content or not region:
         return
     if isinstance(field_labels, str):
         field_labels = [field_labels]
-
-    # colete todos os rótulos abaixo da âncora
     candidates = []
     for lbl in field_labels:
         for r in page.search_for(lbl):
-            if r.y0 > section_anchor.y0:  # só abaixo do título da seção
+            if _rect_in_region(r, region):
                 candidates.append(r)
     if not candidates:
         return
-
-    # escolha o mais próximo verticalmente ao título da seção
-    target = min(candidates, key=lambda r: (r.y0 - section_anchor.y0, abs(r.x0 - section_anchor.x0)))
+    y_top = region[1]
+    target = min(candidates, key=lambda r: (r.y0 - y_top, abs(r.x0 - region[0])))
     x = target.x1 + dx
     y = target.y0 + target.height / 1.5 + dy
     page.insert_text((x, y), str(content), fontsize=fontsize)
 
 
-def mark_X_left_of_in_section(page, section_anchor, field_labels, dx=-12, dy=0):
-    """Variante do 'X' que só marca opções ABAIXO do título da seção."""
-    if not section_anchor:
+def mark_X_left_of_in_region(page, region, field_labels, dx=-12, dy=0, fontsize=12):
+    """Marca 'X' à esquerda do rótulo, limitado à região."""
+    if not region:
         return
     if isinstance(field_labels, str):
         field_labels = [field_labels]
-
     candidates = []
     for lbl in field_labels:
         for r in page.search_for(lbl):
-            if r.y0 > section_anchor.y0:
+            if _rect_in_region(r, region):
                 candidates.append(r)
     if not candidates:
         return
-    target = min(candidates, key=lambda r: (r.y0 - section_anchor.y0, abs(r.x0 - section_anchor.x0)))
-    page.insert_text((target.x0 + dx, target.y0 + dy), "X", fontsize=12)
+    y_top = region[1]
+    target = min(candidates, key=lambda r: (r.y0 - y_top, abs(r.x0 - region[0])))
+    page.insert_text((target.x0 + dx, target.y0 + dy), "X", fontsize=fontsize)
 
 
-def insert_equip_table(page, rows, row_height=18, dy_header=42, fontsize=10):
+def insert_signature_png_in_region(page, region, label_variants, png_bytes, rel_rect, occurrence=1):
     """
-    Preenche a grade 'EQUIPAMENTOS NO CLIENTE' célula a célula.
-    Usa as âncoras dos títulos de coluna e escreve as linhas para baixo.
-    Evita sobrepor o cabeçalho da tabela.
+    Insere assinatura (PNG) procurando o label (ex.: 'Assinatura') SOMENTE dentro da região.
+    rel_rect é relativo ao âncora: (x0, dy0, x1, dy1), onde x0/x1 são relativos ao x0 do label
+    e dy0/dy1 relativos ao y1 do label (logo abaixo do rótulo).
     """
-    if not rows:
+    if not png_bytes or not region:
         return
+    if isinstance(label_variants, str):
+        label_variants = [label_variants]
 
-    # âncora do bloco para referência
-    blk_anchor = _find_any(page, ["EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente"])
-    if not blk_anchor:
+    anchors = []
+    for lbl in label_variants:
+        for r in page.search_for(lbl):
+            if _rect_in_region(r, region):
+                anchors.append(r)
+    if not anchors:
         return
+    anchors = sorted(anchors, key=lambda r: (r.y0, r.x0))
+    idx = max(0, min(len(anchors) - 1, occurrence - 1))
+    base = anchors[idx]
 
-    # cabeçalhos das 4 colunas
-    tipo_r = _find_any(page, ["Tipo"])
-    ns_r   = _find_any(page, ["Nº de Série", "No de Serie", "Nº de Serie", "N° de Série"])
-    fab_r  = _find_any(page, ["Fabricante"])
-    st_r   = _find_any(page, ["Status"])
+    x0 = base.x0 + rel_rect[0]
+    y0 = base.y1 + rel_rect[1]
+    x1 = base.x0 + rel_rect[2]
+    y1 = base.y1 + rel_rect[3]
+    rect = fitz.Rect(x0, y0, x1, y1)
 
-    # fallback se não achar algum cabeçalho
-    if not (tipo_r and ns_r and fab_r and st_r):
-        base_x = blk_anchor.x0 + 12
-        y0 = blk_anchor.y1 + dy_header
-        xs = [base_x, base_x + 160, base_x + 320, base_x + 460]
-    else:
-        # inicie um pouco abaixo da linha dos cabeçalhos
-        y0 = max(tipo_r.y1, ns_r.y1, fab_r.y1, st_r.y1) + (dy_header - 20)
-        xs = [tipo_r.x0, ns_r.x0, fab_r.x0, st_r.x0]
+    page.insert_image(rect, stream=png_bytes, keep_proportion=True)
 
-    for i, r in enumerate(rows):
-        y = y0 + i * row_height
-        vals = [
-            r.get("tipo", ""),
-            r.get("numero_serie", ""),
-            r.get("fabricante", ""),
-            r.get("status", ""),
-        ]
-        for x, val in zip(xs, vals):
-            if val:
-                page.insert_text((x + 4, y), str(val), fontsize=fontsize)
 
+# ===================== Helpers de conteúdo =====================
 
 def _normalize_equip_rows(rows):
     """Garante que toda linha tenha as 4 chaves, evitando apagar colunas ao editar."""
@@ -157,6 +166,24 @@ def _normalize_equip_rows(rows):
     return out
 
 
+def equipamentos_texto(rows):
+    """
+    Constrói um texto simples (sem CSV) para o bloco 'EQUIPAMENTOS NO CLIENTE',
+    uma linha por item.
+    Ex.: "- Tipo: ONT | Nº Série: ABC123 | Fabricante: XYZ | Status: OK"
+    """
+    rows = _normalize_equip_rows(rows)
+    linhas = []
+    for it in rows:
+        if not (it.get("tipo") or it.get("numero_serie") or it.get("fabricante") or it.get("status")):
+            continue
+        linhas.append(
+            f"- Tipo: {it.get('tipo','')} | Nº Série: {it.get('numero_serie','')} | "
+            f"Fabricante: {it.get('fabricante','')} | Status: {it.get('status','')}"
+        )
+    return "\n".join(linhas)
+
+
 # ===================== UI + Geração =====================
 
 def render():
@@ -169,7 +196,7 @@ def render():
         "hora_inicio": time(8, 0),
         "hora_termino": time(10, 0),
 
-        # Serviços e atividades solicitadas
+        # Serviços
         "svc_instalacao": False,
         "svc_retirada": False,
         "svc_vistoria": False,
@@ -178,7 +205,7 @@ def render():
         "svc_teste_conjunto": False,
         "svc_servico_interno": False,
 
-        # Identificação – Aceite da Atividade
+        # Identificação – Aceite
         "teste_wan": "NA",
         "tecnico_nome": "",
         "cliente_ciente_nome": "",
@@ -189,10 +216,10 @@ def render():
         "sig_tec_png": None,
         "sig_cli_png": None,
 
-        # Tabela Equipamentos no Cliente
+        # Tabela Equipamentos
         "equip_cli": [{"tipo": "", "numero_serie": "", "fabricante": "", "status": ""}],
 
-        # Blocos de texto
+        # Textos
         "problema_encontrado": "",
         "observacoes": "",
 
@@ -213,7 +240,7 @@ def render():
             st.caption("“Número do Bilhete” e “Designação do Circuito” receberão o Nº do Chamado.")
             ss.hora_termino = st.time_input("Horário Término", value=ss.hora_termino)
 
-    # ---------- 2) Serviços e Atividades ----------
+    # ---------- 2) Serviços ----------
     with st.expander("2) Serviços e Atividades Solicitadas", expanded=True):
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -245,7 +272,7 @@ def render():
             ss.aceitacao_resp = st.text_input("Aceitação do serviço pelo responsável", value=ss.aceitacao_resp)
 
         # Captura das assinaturas (PNG com transparência)
-        assinatura_dupla_png()  # popula ss.sig_tec_png e ss.sig_cli_png
+        assinatura_dupla_png()  # ss.sig_tec_png / ss.sig_cli_png
 
     # ---------- 4) Equipamentos ----------
     with st.expander("4) Equipamentos no Cliente", expanded=True):
@@ -272,17 +299,15 @@ def render():
 
     # ---------- 6) Foto(s) do Gateway ----------
     with st.expander("6) Foto do Gateway", expanded=True):
-        foto_gateway_uploader()  # adiciona bytes das imagens em ss.fotos_gateway
+        foto_gateway_uploader()
 
     # ---------- Geração do PDF ----------
     if st.button("🧾 Gerar PDF (OI CPE)"):
         try:
-            # Abre o template
             doc, page1 = open_pdf_template(PDF_BASE_PATH, hint="RAT OI CPE NOVO")
-            has_p2 = doc.page_count >= 2
-            page2 = doc[1] if has_p2 else page1  # alvo dos blocos pós-cabeçalho
+            page2 = doc[1] if doc.page_count >= 2 else page1
 
-            # ====== PÁGINA 1: Cabeçalho + Serviços ======
+            # ===== PÁGINA 1: Cabeçalho + Serviços =====
             insert_right_of(page1, ["Cliente"], ss.cliente, dx=8, dy=1)
             insert_right_of(page1, ["Número do Bilhete", "Numero do Bilhete"], ss.numero_chamado, dx=8, dy=1)
             insert_right_of(page1, ["Designação do Circuito", "Designacao do Circuito"], ss.numero_chamado, dx=8, dy=1)
@@ -292,73 +317,89 @@ def render():
             insert_right_of(page1, ["Horário Término", "Horario Termino", "Horário termino"],
                             ss.hora_termino.strftime("%H:%M"), dx=8, dy=1)
 
-            # Serviços – marcar X na página 1
-            if ss.svc_instalacao:
-                mark_X_left_of(page1, "Instalação", dx=-16, dy=0)
-            if ss.svc_retirada:
-                mark_X_left_of(page1, "Retirada", dx=-16, dy=0)
-            if ss.svc_vistoria:
-                mark_X_left_of(page1, "Vistoria Técnica", dx=-16, dy=0)
-                mark_X_left_of(page1, "Vistoria Tecnica", dx=-16, dy=0)
-            if ss.svc_alteracao:
-                mark_X_left_of(page1, "Alteração Técnica", dx=-16, dy=0)
-                mark_X_left_of(page1, "Alteracao Tecnica", dx=-16, dy=0)
-            if ss.svc_mudanca:
-                mark_X_left_of(page1, "Mudança de Endereço", dx=-16, dy=0)
-                mark_X_left_of(page1, "Mudanca de Endereco", dx=-16, dy=0)
-            if ss.svc_teste_conjunto:
-                mark_X_left_of(page1, "Teste em conjunto", dx=-16, dy=0)
-            if ss.svc_servico_interno:
-                mark_X_left_of(page1, "Serviço interno", dx=-16, dy=0)
-                mark_X_left_of(page1, "Servico interno", dx=-16, dy=0)
+            if ss.svc_instalacao:      mark_X_left_of(page1, "Instalação", dx=-16, dy=0)
+            if ss.svc_retirada:        mark_X_left_of(page1, "Retirada", dx=-16, dy=0)
+            if ss.svc_vistoria:        mark_X_left_of(page1, "Vistoria Técnica", dx=-16, dy=0); mark_X_left_of(page1, "Vistoria Tecnica", dx=-16, dy=0)
+            if ss.svc_alteracao:       mark_X_left_of(page1, "Alteração Técnica", dx=-16, dy=0); mark_X_left_of(page1, "Alteracao Tecnica", dx=-16, dy=0)
+            if ss.svc_mudanca:         mark_X_left_of(page1, "Mudança de Endereço", dx=-16, dy=0); mark_X_left_of(page1, "Mudanca de Endereco", dx=-16, dy=0)
+            if ss.svc_teste_conjunto:  mark_X_left_of(page1, "Teste em conjunto", dx=-16, dy=0)
+            if ss.svc_servico_interno: mark_X_left_of(page1, "Serviço interno", dx=-16, dy=0);    mark_X_left_of(page1, "Servico interno", dx=-16, dy=0)
 
-            # ====== Alvo dos blocos “parte 2” (page2 se existir) ======
+            # ===== PARTE 2 (normalmente página 2): Identificação – Aceite / Equip / Textos =====
             target = page2
 
-            # âncora da seção "Identificação – Aceite da Atividade"
-            sec_anchor = _find_section_anchor(
+            # REGIÃO "Identificação – Aceite da Atividade"
+            ident_region = _find_region_between(
                 target,
-                [
+                start_labels=[
                     "Identificação – Aceite da Atividade",
                     "Identificacao - Aceite da Atividade",
                     "IDENTIFICAÇÃO – ACEITE DA ATIVIDADE",
                     "IDENTIFICACAO - ACEITE DA ATIVIDADE",
                 ],
+                end_labels=[
+                    "EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente",
+                    "PROBLEMA ENCONTRADO", "Problema Encontrado",
+                    "OBSERVAÇÕES", "Observacoes", "Observações",
+                ],
             )
 
-            # --- Identificação – Aceite (textos) ANCORADO À SEÇÃO ---
-            insert_right_of_in_section(target, sec_anchor, ["Técnico:", "Tecnico:", "Técnico", "Tecnico"],
-                                       ss.tecnico_nome, dx=8, dy=1)
-            insert_right_of_in_section(target, sec_anchor, ["Cliente Ciente:", "Cliente Ciente"],
-                                       ss.cliente_ciente_nome, dx=8, dy=1)
-            insert_right_of_in_section(target, sec_anchor, ["Contato:", "Contato"],
-                                       ss.contato, dx=8, dy=1)
-            insert_right_of_in_section(target, sec_anchor, ["Data:", "Data"],
-                                       ss.data_aceite.strftime("%d/%m/%Y"), dx=8, dy=1)
-            insert_right_of_in_section(target, sec_anchor, ["Horário:", "Horario:", "Horário", "Horario"],
-                                       ss.horario_aceite.strftime("%H:%M"), dx=8, dy=1)
-            insert_right_of_in_section(target, sec_anchor, ["Aceitação do serviço", "Aceitacao do servico"],
-                                       ss.aceitacao_resp, dx=8, dy=1)
+            # Campos de texto ANCORADOS À REGIÃO (com/sem “:”, com/sem acento)
+            insert_right_of_in_region(target, ident_region,
+                ["Técnico:", "Tecnico:", "Técnico", "Tecnico"],
+                ss.tecnico_nome, dx=8, dy=1)
 
-            # --- Teste WAN (S / N / N/A) ANCORADO À SEÇÃO ---
+            insert_right_of_in_region(target, ident_region,
+                ["Cliente Ciente:", "Cliente Ciente", "Cliente  Ciente"],
+                ss.cliente_ciente_nome, dx=8, dy=1)
+
+            insert_right_of_in_region(target, ident_region,
+                ["Contato:", "Contato"],
+                ss.contato, dx=8, dy=1)
+
+            insert_right_of_in_region(target, ident_region,
+                ["Data:", "Data"],
+                ss.data_aceite.strftime("%d/%m/%Y"), dx=8, dy=1)
+
+            insert_right_of_in_region(target, ident_region,
+                ["Horário:", "Horario:", "Horário", "Horario"],
+                ss.horario_aceite.strftime("%H:%M"), dx=8, dy=1)
+
+            insert_right_of_in_region(target, ident_region,
+                ["Aceitação do serviço", "Aceitacao do servico",
+                 "Aceitação do serviço pelo responsável", "Aceitacao do servico pelo responsavel"],
+                ss.aceitacao_resp, dx=8, dy=1)
+
+            # Teste WAN (S/N/NA) dentro da região — tolera variações
+            labels_S  = [" S ", "S", "Sim"]
+            labels_N  = [" N ", "N", "Não", "Nao"]
+            labels_NA = ["N/A", "NA", "N / A"]
             if ss.teste_wan == "S":
-                mark_X_left_of_in_section(target, sec_anchor, ["S"], dx=-12, dy=0)
+                mark_X_left_of_in_region(target, ident_region, labels_S, dx=-12, dy=0)
             elif ss.teste_wan == "N":
-                mark_X_left_of_in_section(target, sec_anchor, ["N"], dx=-12, dy=0)
+                mark_X_left_of_in_region(target, ident_region, labels_N, dx=-12, dy=0)
             else:
-                mark_X_left_of_in_section(target, sec_anchor, ["N/A", "NA"], dx=-12, dy=0)
+                mark_X_left_of_in_region(target, ident_region, labels_NA, dx=-12, dy=0)
 
-            # --- Assinaturas (sobem 3 cm), ainda dentro da mesma seção ---
+            # Assinaturas (sobem 3 cm) — 1ª = Técnico, 2ª = Cliente
             up3 = 3 * CM
-            insert_signature_png(target, ["Assinatura"], ss.sig_tec_png,
-                                 (80, 20 - up3, 280, 90 - up3), occurrence=1)
-            insert_signature_png(target, ["Assinatura"], ss.sig_cli_png,
-                                 (80, 20 - up3, 280, 90 - up3), occurrence=2)
+            labels_ass = ["Assinatura", "ASSINATURA"]
+            insert_signature_png_in_region(target, ident_region, labels_ass, ss.sig_tec_png,
+                                           (80, 20 - up3, 280, 90 - up3), occurrence=1)
+            insert_signature_png_in_region(target, ident_region, labels_ass, ss.sig_cli_png,
+                                           (80, 20 - up3, 280, 90 - up3), occurrence=2)
 
-            # --- Equipamentos no Cliente (tabela) ---
-            insert_equip_table(target, ss.equip_cli, row_height=18, dy_header=42, fontsize=10)
+            # "EQUIPAMENTOS NO CLIENTE" — texto simples no bloco da seção
+            eq_text = equipamentos_texto(ss.equip_cli)
+            if eq_text.strip():
+                insert_textbox(
+                    target,
+                    ["EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente"],
+                    eq_text,
+                    width=540, y_offset=28, height=220, fontsize=9, align=0
+                )
 
-            # --- Problema / Observações ---
+            # Problema / Observações
             if (ss.problema_encontrado or "").strip():
                 insert_textbox(target, ["PROBLEMA ENCONTRADO", "Problema Encontrado"],
                                ss.problema_encontrado, width=540, y_offset=20, height=160, fontsize=10)
@@ -366,13 +407,11 @@ def render():
                 insert_textbox(target, ["OBSERVAÇÕES", "Observacoes", "Observações"],
                                ss.observacoes, width=540, y_offset=20, height=160, fontsize=10)
 
-            # ===== Fotos do gateway: 1 página por foto =====
+            # Fotos do gateway — 1 página por foto
             for b in ss.fotos_gateway:
-                if not b:
-                    continue
-                add_image_page(doc, b)
+                if b:
+                    add_image_page(doc, b)
 
-            # Exporta
             out = BytesIO()
             doc.save(out)
             doc.close()
