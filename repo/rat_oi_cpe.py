@@ -287,7 +287,7 @@ def render():
     # ---------- 5) Produtividade / Textos ----------
     with st.expander("5) Produtividade & Textos", expanded=True):
         ss.produtivo = st.selectbox(
-            "Produtivo?",
+            "Produtivo",
             ["sim-totalmente produtivo", "sim-com BA", "não-improdutivo"],
             index=["sim-totalmente produtivo", "sim-com BA", "não-improdutivo"].index(ss.produtivo)
         )
