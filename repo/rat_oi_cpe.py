@@ -1,6 +1,6 @@
-# repo/rat_oi_cpe.py — RAT OI CPE (assinaturas por âncoras "Assinatura",
-# WAN X nos offsets pedidos, data/hora em America/Sao_Paulo, contato correto,
-# endereço Ponta A + Nº, equipamentos com mais espaço)
+# repo/rat_oi_cpe.py — RAT OI CPE (assinaturas ancoradas por Técnico/Cliente,
+#                           cliente +6px, WAN offsets fixos, TZ selecionável,
+#                           contato correto, endereço Ponta A + Nº, equipamentos com mais espaço)
 
 import os, sys
 from io import BytesIO
@@ -25,7 +25,7 @@ from common.pdf import (
 PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
 PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_OI_CPE_NOVO.pdf")
 
-TZ = ZoneInfo("America/Sao_Paulo")
+DEFAULT_TZ = "America/Sao_Paulo"
 
 # ------------------------ helpers de busca ------------------------
 
@@ -50,12 +50,24 @@ def _nearest_to(page, label, near_rect, max_dy=30):
     if not cands or near_rect is None:
         return None
     cy = near_rect.y0 + near_rect.height/2
-    # prioriza cands com Y parecido
     cands_sorted = sorted(cands, key=lambda r: abs((r.y0 + r.height/2) - cy))
     best = cands_sorted[0]
     if abs((best.y0 + best.height/2) - cy) <= max_dy:
         return best
-    return best  # devolve mesmo assim (melhor esforço)
+    return best
+
+def _assinatura_anchor_near_label(page, label_rect):
+    """Escolhe a âncora 'Assinatura' com y > label_rect.y0 e menor delta-y."""
+    if label_rect is None:
+        return None
+    anchors = _all_hits(page, ["Assinatura", "ASSINATURA"])
+    if not anchors:
+        return None
+    below = [r for r in anchors if r.y0 >= label_rect.y0 - 2]
+    if not below:
+        below = anchors
+    below.sort(key=lambda r: (abs(r.y0 - label_rect.y0), r.x0))
+    return below[0]
 
 # ------------------------ Equipamentos (UI vertical) ------------------------
 
@@ -89,8 +101,7 @@ def equipamentos_texto(rows, max_chars=95, add_blank_between=True):
             linhas.append(base[:max_chars].rstrip())
             linhas.append("  " + base[max_chars:].lstrip())
         if add_blank_between:
-            linhas.append("")  # espaçamento
-    # remove linha vazia final
+            linhas.append("")
     while linhas and not linhas[-1].strip():
         linhas.pop()
     return "\n".join(linhas)
@@ -156,6 +167,8 @@ def render():
 
         # Data/hora automáticas
         "usar_agora": True,
+        "tz_name": DEFAULT_TZ,
+        "tz_custom": "",
 
         # Equipamentos
         "equip_cli": [{"tipo":"","numero_serie":"","modelo":"","status":""}],
@@ -220,7 +233,10 @@ def render():
         with c2:
             ss.aceitacao_resp = st.text_input("Aceitação do serviço pelo responsável", value=ss.aceitacao_resp)
 
-        st.checkbox("Usar data/hora atuais na geração do PDF (America/Sao_Paulo)", value=ss.usar_agora, key="usar_agora")
+        st.checkbox("Usar data/hora atuais na geração do PDF", value=ss.usar_agora, key="usar_agora")
+        tz_opts = ["America/Sao_Paulo","America/Manaus","America/Bahia","America/Fortaleza","UTC"]
+        ss.tz_name = st.selectbox("Fuso horário", tz_opts, index=tz_opts.index(ss.tz_name) if ss.tz_name in tz_opts else 0)
+        ss.tz_custom = st.text_input("Fuso horário (avançado: digite um TZ válido opcional)", value=ss.tz_custom)
         assinatura_dupla_png()  # preenche ss.sig_tec_png / ss.sig_cli_png
 
     # 4) Equipamentos (verticais)
@@ -262,7 +278,7 @@ def render():
             insert_right_of(page1, ["Número do Bilhete", "Numero do Bilhete"], ss.numero_chamado, dx=8, dy=1)
             insert_right_of(page1, ["Designação do Circuito", "Designacao do Circuito"], ss.numero_chamado, dx=8, dy=1)
 
-            # Horários (de atendimento, seção do topo)
+            # Horários (de atendimento, topo)
             insert_right_of(page1, ["Horário Início", "Horario Inicio", "Horario Início"],
                             ss.hora_inicio.strftime("%H:%M"), dx=8, dy=1)
             insert_right_of(page1, ["Horário Término", "Horario Termino", "Horário termino"],
@@ -290,7 +306,7 @@ def render():
 
             # ===== IDENTIFICAÇÃO – ACEITE (página 1, rodapé) =====
 
-            # Teste WAN — marcar X com offsets pedidos
+            # Teste WAN — offsets pedidos
             wan_label = _first_hit(page1, ["Teste de conectividade WAN", "Teste final com equipamento do cliente"])
             if wan_label:
                 pos_S  = wan_label.x1 + 140
@@ -304,42 +320,48 @@ def render():
                 else:
                     page1.insert_text((pos_NA, ymark), "X", fontsize=12)
 
-            # Nome do técnico
+            # Técnico — nome
             insert_right_of(page1, ["Técnico","Tecnico"], ss.tecnico_nome, dx=8, dy=1)
             tec_label = _first_hit(page1, ["Técnico","Tecnico"])
 
-            # Nome do cliente ciente
+            # Cliente ciente — nome
             insert_right_of(page1, ["Cliente Ciente","Cliente  Ciente"], ss.cliente_ciente_nome, dx=8, dy=1)
             cli_label = _first_hit(page1, ["Cliente Ciente","Cliente  Ciente"])
 
-            # Contato — procurar o rótulo mais próximo da linha do cliente
+            # Contato (âncora na mesma linha do cliente, se possível)
             contato_anchor = _nearest_to(page1, ["Contato"], cli_label, max_dy=40)
             if contato_anchor and (ss.contato or "").strip():
                 x = contato_anchor.x1 + 8
                 y = contato_anchor.y0 + contato_anchor.height/1.5 + 1
                 page1.insert_text((x, y), ss.contato, fontsize=10)
             else:
-                # fallback genérico
                 insert_right_of(page1, ["Contato"], ss.contato, dx=8, dy=1)
 
-            # Assinaturas — ancorar nas palavras "Assinatura"
-            ass_list = _all_hits(page1, ["Assinatura","ASSINATURA"])
-            ass_list.sort(key=lambda r: (r.y0, r.x0))
-            # Técnico = primeira ocorrência; Cliente = segunda ocorrência (se houver)
-            if len(ass_list) >= 1 and ss.sig_tec_png:
-                a = ass_list[0]
-                # levemente acima do baseline (sobe ~6 pt)
-                rect = fitz.Rect(a.x0, a.y0 - 6, a.x0 + 200, a.y0 + 44)
-                page1.insert_image(rect, stream=ss.sig_tec_png, keep_proportion=True)
-            if len(ass_list) >= 2 and ss.sig_cli_png:
-                b = ass_list[1]
-                # mais abaixo (desce ~28 pt para ficar destacado)
-                rect = fitz.Rect(b.x0, b.y0 + 28, b.x0 + 200, b.y0 + 78)
-                page1.insert_image(rect, stream=ss.sig_cli_png, keep_proportion=True)
+            # Assinaturas — âncoras específicas por rótulo
+            # Técnico → âncora mais próxima abaixo de "Técnico"
+            if ss.sig_tec_png:
+                anchor_tec = _assinatura_anchor_near_label(page1, tec_label)
+                if anchor_tec:
+                    # levemente acima do baseline da âncora (sobe ~6 pt)
+                    rect = fitz.Rect(anchor_tec.x0, anchor_tec.y0 - 6, anchor_tec.x0 + 200, anchor_tec.y0 + 44)
+                    page1.insert_image(rect, stream=ss.sig_tec_png, keep_proportion=True)
 
-            # Data / Horário (rodapé) — usar TZ America/Sao_Paulo se 'usar_agora'
+            # Cliente → âncora mais próxima abaixo de "Cliente Ciente"
+            if ss.sig_cli_png:
+                anchor_cli = _assinatura_anchor_near_label(page1, cli_label)
+                if anchor_cli:
+                    # subir 6 px vs a versão anterior (era +28, agora +22)
+                    rect = fitz.Rect(anchor_cli.x0, anchor_cli.y0 + 22, anchor_cli.x0 + 200, anchor_cli.y0 + 72)
+                    page1.insert_image(rect, stream=ss.sig_cli_png, keep_proportion=True)
+
+            # Data / Horário (com TZ)
             if ss.usar_agora:
-                now = datetime.now(tz=TZ)
+                tzname = (ss.tz_custom.strip() or ss.tz_name or DEFAULT_TZ)
+                try:
+                    tz = ZoneInfo(tzname)
+                except Exception:
+                    tz = ZoneInfo(DEFAULT_TZ)
+                now = datetime.now(tz=tz)
                 data_auto = now.strftime("%d/%m/%Y")
                 hora_auto = now.strftime("%H:%M")
                 insert_right_of(page1, ["Data"], data_auto, dx=8, dy=1)
