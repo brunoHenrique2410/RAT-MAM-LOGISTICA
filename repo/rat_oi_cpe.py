@@ -1,9 +1,12 @@
-# repo/rat_oi_cpe.py — RAT OI CPE (assinaturas em posições distintas, WAN correto,
-# contato/data/hora no rodapé, endereço Ponta A + Nº, equipamentos com mais espaço)
+# repo/rat_oi_cpe.py — RAT OI CPE (assinaturas por âncoras "Assinatura",
+# WAN X nos offsets pedidos, data/hora em America/Sao_Paulo, contato correto,
+# endereço Ponta A + Nº, equipamentos com mais espaço)
 
 import os, sys
 from io import BytesIO
 from datetime import date, time, datetime
+from zoneinfo import ZoneInfo
+
 import streamlit as st
 import fitz  # PyMuPDF
 
@@ -22,7 +25,9 @@ from common.pdf import (
 PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
 PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_OI_CPE_NOVO.pdf")
 
-# ------------------------ helpers de busca/âncoras ------------------------
+TZ = ZoneInfo("America/Sao_Paulo")
+
+# ------------------------ helpers de busca ------------------------
 
 def _all_hits(page, labels):
     if isinstance(labels, str):
@@ -38,6 +43,19 @@ def _all_hits(page, labels):
 def _first_hit(page, labels):
     hits = _all_hits(page, labels)
     return hits[0] if hits else None
+
+def _nearest_to(page, label, near_rect, max_dy=30):
+    """Retorna o rect do label com Y mais próximo de near_rect (mesma linha), se existir."""
+    cands = _all_hits(page, label)
+    if not cands or near_rect is None:
+        return None
+    cy = near_rect.y0 + near_rect.height/2
+    # prioriza cands com Y parecido
+    cands_sorted = sorted(cands, key=lambda r: abs((r.y0 + r.height/2) - cy))
+    best = cands_sorted[0]
+    if abs((best.y0 + best.height/2) - cy) <= max_dy:
+        return best
+    return best  # devolve mesmo assim (melhor esforço)
 
 # ------------------------ Equipamentos (UI vertical) ------------------------
 
@@ -129,15 +147,15 @@ def render():
         "svc_alteracao": False, "svc_mudanca": False, "svc_teste_conjunto": False,
         "svc_servico_interno": False,
 
-        # Identificação – Aceite (inputs; data/hora podem ser sobrescritos por 'usar_agora')
+        # Identificação – Aceite
         "teste_wan": "NA",
         "tecnico_nome": "", "cliente_ciente_nome": "",
         "contato": "", "data_aceite": date.today(),
         "horario_aceite": time(10,0), "aceitacao_resp": "",
         "sig_tec_png": None, "sig_cli_png": None,
 
-        # Opções de data/hora
-        "usar_agora": True,  # usa data/hora atuais na geração
+        # Data/hora automáticas
+        "usar_agora": True,
 
         # Equipamentos
         "equip_cli": [{"tipo":"","numero_serie":"","modelo":"","status":""}],
@@ -202,7 +220,7 @@ def render():
         with c2:
             ss.aceitacao_resp = st.text_input("Aceitação do serviço pelo responsável", value=ss.aceitacao_resp)
 
-        st.checkbox("Usar data/hora atuais na geração do PDF", value=ss.usar_agora, key="usar_agora")
+        st.checkbox("Usar data/hora atuais na geração do PDF (America/Sao_Paulo)", value=ss.usar_agora, key="usar_agora")
         assinatura_dupla_png()  # preenche ss.sig_tec_png / ss.sig_cli_png
 
     # 4) Equipamentos (verticais)
@@ -272,14 +290,13 @@ def render():
 
             # ===== IDENTIFICAÇÃO – ACEITE (página 1, rodapé) =====
 
-            # Teste WAN (linha exata)
+            # Teste WAN — marcar X com offsets pedidos
             wan_label = _first_hit(page1, ["Teste de conectividade WAN", "Teste final com equipamento do cliente"])
             if wan_label:
-                # offsets horizontais (ajuste fino conforme seu PDF)
                 pos_S  = wan_label.x1 + 140
                 pos_N  = wan_label.x1 + 165
                 pos_NA = wan_label.x1 + 210
-                ymark  = wan_label.y1  # mesma linha
+                ymark  = wan_label.y0
                 if ss.teste_wan == "S":
                     page1.insert_text((pos_S, ymark), "X", fontsize=12)
                 elif ss.teste_wan == "N":
@@ -287,28 +304,42 @@ def render():
                 else:
                     page1.insert_text((pos_NA, ymark), "X", fontsize=12)
 
-            # Nome do técnico e assinatura (sobe um pouco)
+            # Nome do técnico
             insert_right_of(page1, ["Técnico","Tecnico"], ss.tecnico_nome, dx=8, dy=1)
             tec_label = _first_hit(page1, ["Técnico","Tecnico"])
-            if tec_label and ss.sig_tec_png:
-                # sobe 10 pt em relação à linha
-                rect = fitz.Rect(tec_label.x0+80, tec_label.y1-6, tec_label.x0+280, tec_label.y1+44)
-                page1.insert_image(rect, stream=ss.sig_tec_png, keep_proportion=True)
 
-            # Nome do cliente ciente e assinatura (desce bastante)
+            # Nome do cliente ciente
             insert_right_of(page1, ["Cliente Ciente","Cliente  Ciente"], ss.cliente_ciente_nome, dx=8, dy=1)
             cli_label = _first_hit(page1, ["Cliente Ciente","Cliente  Ciente"])
-            if cli_label and ss.sig_cli_png:
-                # desce 36 pt em relação à linha
-                rect = fitz.Rect(cli_label.x0+80, cli_label.y1+36, cli_label.x0+280, cli_label.y1+86)
+
+            # Contato — procurar o rótulo mais próximo da linha do cliente
+            contato_anchor = _nearest_to(page1, ["Contato"], cli_label, max_dy=40)
+            if contato_anchor and (ss.contato or "").strip():
+                x = contato_anchor.x1 + 8
+                y = contato_anchor.y0 + contato_anchor.height/1.5 + 1
+                page1.insert_text((x, y), ss.contato, fontsize=10)
+            else:
+                # fallback genérico
+                insert_right_of(page1, ["Contato"], ss.contato, dx=8, dy=1)
+
+            # Assinaturas — ancorar nas palavras "Assinatura"
+            ass_list = _all_hits(page1, ["Assinatura","ASSINATURA"])
+            ass_list.sort(key=lambda r: (r.y0, r.x0))
+            # Técnico = primeira ocorrência; Cliente = segunda ocorrência (se houver)
+            if len(ass_list) >= 1 and ss.sig_tec_png:
+                a = ass_list[0]
+                # levemente acima do baseline (sobe ~6 pt)
+                rect = fitz.Rect(a.x0, a.y0 - 6, a.x0 + 200, a.y0 + 44)
+                page1.insert_image(rect, stream=ss.sig_tec_png, keep_proportion=True)
+            if len(ass_list) >= 2 and ss.sig_cli_png:
+                b = ass_list[1]
+                # mais abaixo (desce ~28 pt para ficar destacado)
+                rect = fitz.Rect(b.x0, b.y0 + 28, b.x0 + 200, b.y0 + 78)
                 page1.insert_image(rect, stream=ss.sig_cli_png, keep_proportion=True)
 
-            # Contato (mesma região do cliente)
-            insert_right_of(page1, ["Contato"], ss.contato, dx=8, dy=1)
-
-            # Data / Horário (rodapé) — usar agora() se 'usar_agora' marcado
+            # Data / Horário (rodapé) — usar TZ America/Sao_Paulo se 'usar_agora'
             if ss.usar_agora:
-                now = datetime.now()
+                now = datetime.now(tz=TZ)
                 data_auto = now.strftime("%d/%m/%Y")
                 hora_auto = now.strftime("%H:%M")
                 insert_right_of(page1, ["Data"], data_auto, dx=8, dy=1)
