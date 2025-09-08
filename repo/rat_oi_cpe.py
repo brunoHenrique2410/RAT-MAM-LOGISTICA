@@ -276,7 +276,7 @@ def render():
             wan_label = _first_hit(page1, ["Teste de conectividade WAN", "Teste final com equipamento do cliente"])
             if wan_label:
                 # offsets horizontais (ajuste fino conforme seu PDF)
-                pos_S  = wan_label.x1 + 120
+                pos_S  = wan_label.x1 + 150
                 pos_N  = wan_label.x1 + 170
                 pos_NA = wan_label.x1 + 210
                 ymark  = wan_label.y1  # mesma linha
