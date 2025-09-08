@@ -277,7 +277,7 @@ def render():
             if wan_label:
                 # offsets horizontais (ajuste fino conforme seu PDF)
                 pos_S  = wan_label.x1 + 140
-                pos_N  = wan_label.x1 + 160
+                pos_N  = wan_label.x1 + 165
                 pos_NA = wan_label.x1 + 210
                 ymark  = wan_label.y1  # mesma linha
                 if ss.teste_wan == "S":
