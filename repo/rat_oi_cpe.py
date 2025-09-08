@@ -2,6 +2,7 @@
 # - Preenche IDENTIFICAÇÃO – ACEITE DA ATIVIDADE por REGIÃO na página correta (auto-detect)
 # - Assinaturas ancoradas na região (+3 cm)
 # - Equipamentos no Cliente com UI simplificada (sem 'fabricante', caixas de texto + selects)
+# - Render no PDF com fonte menor e quebra automática para caber
 # - Regras de Produtivo/BA/Motivo injetadas em Problema/Obs/Ação Corretiva
 
 # --- PATH FIX: importa common/ e pdf_templates/ pela raiz ---
@@ -169,20 +170,23 @@ def _normalize_equip_rows(rows):
         out = [{"tipo": "", "numero_serie": "", "modelo": "", "status": ""}]
     return out
 
-def equipamentos_texto(rows):
+def equipamentos_texto(rows, max_chars=85):
     """
     Texto simples para 'EQUIPAMENTOS NO CLIENTE' (uma linha por item).
-    Ex.: "- Tipo: ONT | Nº Série: ABC | Mod: SynWay | Status: instalado pelo técnico"
+    Usa fonte menor e força quebras para caber sem estourar.
     """
     rows = _normalize_equip_rows(rows)
     linhas = []
     for it in rows:
         if not (it.get("tipo") or it.get("numero_serie") or it.get("modelo") or it.get("status")):
             continue
-        linhas.append(
-            f"- Tipo: {it.get('tipo','')} | Nº Série: {it.get('numero_serie','')} | "
-            f"Mod: {it.get('modelo','')} | Status: {it.get('status','')}"
-        )
+        base = f"- Tipo: {it.get('tipo','')} | Nº Série: {it.get('numero_serie','')} | Mod: {it.get('modelo','')} | Status: {it.get('status','')}"
+        if len(base) <= max_chars:
+            linhas.append(base)
+        else:
+            # quebra “manual” em 2 linhas para caber
+            linhas.append(base[:max_chars].rstrip())
+            linhas.append("  " + base[max_chars:].lstrip())
     return "\n".join(linhas)
 
 def equipamentos_editor_simple():
@@ -209,19 +213,19 @@ def equipamentos_editor_simple():
     # Render de cada linha
     for i, it in enumerate(ss.equip_cli):
         st.markdown(f"**Item {i+1}**")
-        c1, c2, c3, c4 = st.columns([2,2,1.2,1.8])
+        c1, c2, c3, c4 = st.columns([2,2,1.3,1.9])
         with c1:
             it["tipo"] = st.text_input("Tipo", value=it.get("tipo",""), key=f"equip_{i}_tipo")
         with c2:
             it["numero_serie"] = st.text_input("Nº de Série", value=it.get("numero_serie",""), key=f"equip_{i}_sn")
         with c3:
-            it["modelo"] = st.selectbox("Modelo", ["", "aligera", "SynWay"], index=["","aligera","SynWay"].index(it.get("modelo","") if it.get("modelo","") in ["aligera","SynWay"] else ""), key=f"equip_{i}_modelo")
+            cur_modelo = it.get("modelo","")
+            idx = modelo_opts.index(cur_modelo) if cur_modelo in modelo_opts else 0
+            it["modelo"] = st.selectbox("Modelo", modelo_opts, index=idx, key=f"equip_{i}_modelo")
         with c4:
-            # status select
             cur_status = it.get("status","")
-            if cur_status not in status_opts:
-                cur_status = ""
-            it["status"] = st.selectbox("Status", status_opts, index=status_opts.index(cur_status), key=f"equip_{i}_status")
+            idxs = status_opts.index(cur_status) if cur_status in status_opts else 0
+            it["status"] = st.selectbox("Status", status_opts, index=idxs, key=f"equip_{i}_status")
         st.divider()
 
     ss.equip_cli = _normalize_equip_rows(ss.equip_cli)
@@ -356,18 +360,15 @@ def render():
         try:
             doc, page1 = open_pdf_template(PDF_BASE_PATH, hint="RAT OI CPE NOVO")
 
-            # ================= Página com IDENTIFICAÇÃO – ACEITE =================
-            # Descobre a página correta pelo título da seção
+            # 1) Página do IDENTIFICAÇÃO – ACEITE (auto-detecta)
             ident_titles = [
                 "IDENTIFICAÇÃO – ACEITE DA ATIVIDADE",
                 "Identificação – Aceite da Atividade",
                 "IDENTIFICACAO - ACEITE DA ATIVIDADE",
                 "Identificacao - Aceite da Atividade",
             ]
-            target, target_idx = find_page_with_title(doc, ident_titles)
-            if target is None:
-                # fallback: usa página 2 se existir, senão página 1
-                target = doc[1] if doc.page_count >= 2 else page1
+            ident_page, ident_idx = find_page_with_title(doc, ident_titles)
+            target = ident_page if ident_page is not None else (doc[1] if doc.page_count >= 2 else page1)
 
             # ===== PÁGINA 1: Cabeçalho + Serviços =====
             insert_right_of(page1, ["Cliente"], ss.cliente, dx=8, dy=1)
@@ -396,7 +397,7 @@ def render():
                     "INFORMAÇÕES TECNICAS DO CIRCUITO", "INFORMACOES TECNICAS DO CIRCUITO",
                     "PROBLEMA ENCONTRADO", "Problema Encontrado",
                     "OBSERVAÇÕES", "Observacoes", "Observações",
-                    "EQUIPAMENTOS",  # alguns templates usam apenas "EQUIPAMENTOS"
+                    "EQUIPAMENTOS",
                 ],
             )
             if ident_region is None:
@@ -434,7 +435,8 @@ def render():
                                            (80, 20 - up3, 280, 90 - up3), occurrence=2)
 
             # ===== EQUIPAMENTOS NO CLIENTE (na mesma página 'target') =====
-            eq_text = equipamentos_texto(ss.equip_cli)
+            # Render enxuto com quebra automática e fonte menor
+            eq_text = equipamentos_texto(ss.equip_cli, max_chars=85)
             if eq_text.strip():
                 insert_textbox(
                     target,
