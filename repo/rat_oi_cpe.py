@@ -23,7 +23,7 @@ from common.pdf import (
 )
 
 PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
-PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_OI_CPE_NOVO.pdf")
+PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT OI CPE NOVO.pdf")
 
 
 # ===================== Helpers de busca / região =====================
@@ -88,7 +88,7 @@ def insert_right_of_in_region(page, region, field_labels, content, dx=8, dy=1, f
     page.insert_text((x, y), str(content), fontsize=fontsize)
 
 def mark_X_left_of_in_region(page, region, field_labels, dx=-12, dy=0, fontsize=12):
-    if not region:L
+    if not region:
         return
     if isinstance(field_labels, str):
         field_labels = [field_labels]
