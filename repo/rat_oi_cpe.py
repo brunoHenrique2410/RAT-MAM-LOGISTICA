@@ -1,13 +1,9 @@
-# repo/rat_oi_cpe.py — RAT OI CPE (âncoras robustas + página 2 forçada + equipamentos verticais)
-# - NÃO depende do título "IDENTIFICAÇÃO – ACEITE..." para achar a região.
-# - Encontra a página-alvo por sentinelas da página 2, mas no final força escrever na página 2.
-# - Região do bloco IDENTIFICAÇÃO calculada por rótulos internos (Técnico / Cliente Ciente / Contato / Data / Horario / Teste).
-# - Assinaturas sobem 3 cm (CM).
-# - Equipamentos no Cliente: UI vertical (inputs um abaixo do outro) e render enxuto no PDF.
+# repo/rat_oi_cpe.py — RAT OI CPE (página 1: Identificação no rodapé, data/hora automáticas,
+#                               Endereço Ponta A + Nº, equipamentos com mais espaçamento)
 
 import os, sys
 from io import BytesIO
-from datetime import date, time
+from datetime import date, time, datetime
 import streamlit as st
 import fitz  # PyMuPDF
 
@@ -53,7 +49,6 @@ def _in_rect(r, region):
     return (x0 <= cx <= x1) and (y0 <= cy <= y1)
 
 def _choose_nearest_from_top(candidates, region_top_y, region_left_x):
-    # escolhe o rótulo mais “alto” e mais à esquerda dentro da região
     return min(candidates, key=lambda r: (r.y0 - region_top_y, abs(r.x0 - region_left_x)))
 
 def insert_right_of_in_region(page, region, field_labels, content, dx=8, dy=1, fontsize=10):
@@ -109,60 +104,30 @@ def insert_signature_png_in_region(page, region, label_variants, png_bytes, rel_
     y1 = base.y1 + rel_rect[3]
     page.insert_image(fitz.Rect(x0,y0,x1,y1), stream=png_bytes, keep_proportion=True)
 
-def find_page_2_like(doc):
+def compute_ident_region_page1(page):
     """
-    Acha a 'página 2' por âncoras típicas da segunda página.
-    Se não achar, usa index 1 (se existir), senão page 0.
+    Delimita a região do bloco IDENTIFICAÇÃO – ACEITE DA ATIVIDADE na PÁGINA 1,
+    usando rótulos internos. Topo = menor Y entre rótulos internos; Base = fim da página.
+    Isso corresponde ao rodapé do layout original.
     """
-    sentinelas_p2 = [
-        "INFORMAÇÕES TECNICAS DO CIRCUITO", "INFORMACOES TECNICAS DO CIRCUITO",
-        "EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente",
-        "PROBLEMA ENCONTRADO", "Problema Encontrado",
-        "OBSERVAÇÕES", "Observacoes", "Observações",
-        "EQUIPAMENTOS NA ESTAÇÃO", "Equipamentos na Estação", "EQUIPAMENTOS",
+    rotulos = [
+        "Teste de conectividade WAN",    # enunciado do S/N/NA
+        "Teste final com equipamento do cliente",
+        "Técnico", "Tecnico",
+        "Cliente Ciente",
+        "Contato",
+        "Data",
+        "Horario", "Horário",
+        "Aceitação do serviço", "Aceitacao do servico"
     ]
-    for i in range(doc.page_count):
-        page = doc[i]
-        try:
-            if _first_hit(page, sentinelas_p2):
-                return page, i
-        except Exception:
-            pass
-    # fallback pelo índice
-    if doc.page_count >= 2:
-        return doc[1], 1
-    return doc[0], 0
-
-def compute_ident_region_on_page(page):
-    """
-    Delimita a região do bloco IDENTIFICAÇÃO usando rótulos internos.
-    Topo = menor Y entre rótulos internos (presentes).
-    Base = Y do próximo bloco (EQUIPAMENTOS NO CLIENTE / INFORMAÇÕES TECNICAS / PROBLEMA / OBSERVAÇÕES), se houver; senão fim da página.
-    """
-    rotulos_top = [
-        "Teste de conectividade WAN", "Teste final com equipamento do cliente",
-        "Técnico", "Tecnico", "Cliente Ciente", "Contato", "Data", "Horario", "Horário"
-    ]
-    tops = _all_hits(page, rotulos_top)
+    tops = _all_hits(page, rotulos)
     if not tops:
-        # fallback: metade inferior
+        # fallback: faixa inferior
         r = page.rect
-        return (r.x0, r.y0 + r.height*0.35, r.x1, r.y1)
-
+        return (r.x0, r.y0 + r.height*0.55, r.x1, r.y1)
     y_top = min(r.y0 for r in tops)
-
-    # “próximos blocos” que limitam a base:
-    prox_blocos = [
-        "EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente",
-        "INFORMAÇÕES TECNICAS DO CIRCUITO", "INFORMACOES TECNICAS DO CIRCUITO",
-        "PROBLEMA ENCONTRADO", "Problema Encontrado",
-        "OBSERVAÇÕES", "Observacoes", "Observações",
-        "EQUIPAMENTOS NA ESTAÇÃO", "Equipamentos na Estação", "EQUIPAMENTOS",
-    ]
-    ends = [r for r in _all_hits(page, prox_blocos) if r.y0 > y_top]
-    y_bottom = min([r.y0 for r in ends], default=page.rect.y1)
-
-    return (page.rect.x0, y_top, page.rect.x1, y_bottom)
+    r = page.rect
+    return (r.x0, y_top, r.x1, r.y1)
 
 
 # ------------------------ Equipamentos (UI vertical) ------------------------
@@ -180,9 +145,15 @@ def _normalize_equip_rows(rows):
         out=[{"tipo":"","numero_serie":"","modelo":"","status":""}]
     return out
 
-def equipamentos_texto(rows, max_chars=90):
+def equipamentos_texto(rows, max_chars=95, add_blank_between=True):
+    """
+    Texto para 'EQUIPAMENTOS NO CLIENTE' (uma linha por item), com
+    quebra automática e (opcionalmente) uma linha em branco entre itens
+    para aumentar o espaçamento visual no PDF.
+    """
     rows = _normalize_equip_rows(rows)
     linhas=[]
+    first=True
     for it in rows:
         if not (it.get("tipo") or it.get("numero_serie") or it.get("modelo") or it.get("status")):
             continue
@@ -190,9 +161,14 @@ def equipamentos_texto(rows, max_chars=90):
         if len(base) <= max_chars:
             linhas.append(base)
         else:
-            # quebra em 2 linhas para caber
             linhas.append(base[:max_chars].rstrip())
             linhas.append("  " + base[max_chars:].lstrip())
+        if add_blank_between:
+            linhas.append("")  # linha vazia para espaçamento
+            first=False
+    # remove possível linha vazia final
+    while linhas and not linhas[-1].strip():
+        linhas.pop()
     return "\n".join(linhas)
 
 def equipamentos_editor_vertical():
@@ -239,19 +215,23 @@ def render():
         "hora_inicio": time(8,0),
         "hora_termino": time(10,0),
 
+        # Campos adicionais (página 1)
+        "endereco_ponta_a": "",
+        "numero_ponta_a": "",
+
         # Serviços
         "svc_instalacao": False, "svc_retirada": False, "svc_vistoria": False,
         "svc_alteracao": False, "svc_mudanca": False, "svc_teste_conjunto": False,
         "svc_servico_interno": False,
 
-        # Identificação – Aceite
-        "teste_wan": "NA",   # rotulado como "Teste final com equipamento do cliente?"
+        # Identificação – Aceite (inputs continuam visíveis, mas data/hora serão do momento da geração)
+        "teste_wan": "NA",
         "tecnico_nome": "", "cliente_ciente_nome": "",
         "contato": "", "data_aceite": date.today(),
         "horario_aceite": time(10,0), "aceitacao_resp": "",
         "sig_tec_png": None, "sig_cli_png": None,
 
-        # Equipamentos (verticais)
+        # Equipamentos
         "equip_cli": [{"tipo":"","numero_serie":"","modelo":"","status":""}],
 
         # Textos
@@ -281,6 +261,13 @@ def render():
             ss.hora_termino = st.time_input("Horário Término", value=ss.hora_termino)
             ss.suporte_mam = st.text_input("Nome do suporte MAM", value=ss.suporte_mam)
 
+        st.markdown("**Endereço Ponta A (linha do PDF ‘Endereço ponta A… N° …’):**")
+        c3,c4 = st.columns([4,1])
+        with c3:
+            ss.endereco_ponta_a = st.text_input("Endereço Ponta A", value=ss.endereco_ponta_a)
+        with c4:
+            ss.numero_ponta_a = st.text_input("Nº (Ponta A)", value=ss.numero_ponta_a)
+
     # 2) Serviços
     with st.expander("2) Serviços e Atividades Solicitadas", expanded=True):
         c1,c2,c3 = st.columns(3)
@@ -295,8 +282,8 @@ def render():
             ss.svc_teste_conjunto = st.checkbox("Teste em conjunto", value=ss.svc_teste_conjunto)
             ss.svc_servico_interno= st.checkbox("Serviço interno", value=ss.svc_servico_interno)
 
-    # 3) Identificação – Aceite
-    with st.expander("3) Identificação – Aceite da Atividade", expanded=True):
+    # 3) Identificação – Aceite (inputs continuam, mas data/hora virão do timestamp na geração)
+    with st.expander("3) Identificação – Aceite da Atividade (Data/Hora automáticas na geração)", expanded=True):
         ss.teste_wan = st.radio("Teste final com equipamento do cliente?", ["S","N","NA"],
                                 index=["S","N","NA"].index(ss.teste_wan))
         c1,c2 = st.columns(2)
@@ -305,8 +292,6 @@ def render():
             ss.cliente_ciente_nome = st.text_input("Cliente ciente (nome)", value=ss.cliente_ciente_nome)
             ss.contato = st.text_input("Contato (telefone)", value=ss.contato)
         with c2:
-            ss.data_aceite = st.date_input("Data", value=ss.data_aceite)
-            ss.horario_aceite = st.time_input("Horário", value=ss.horario_aceite)
             ss.aceitacao_resp = st.text_input("Aceitação do serviço pelo responsável", value=ss.aceitacao_resp)
         assinatura_dupla_png()  # preenche ss.sig_tec_png / ss.sig_cli_png
 
@@ -343,27 +328,34 @@ def render():
         try:
             doc, page1 = open_pdf_template(PDF_BASE_PATH, hint="RAT OI CPE NOVO")
 
-            # (a) Página que “parece” a 2 (por sentinelas)
-            p2_like, idx_like = find_page_2_like(doc)
-
-            # (b) Forçar página 2 após preencher IDENTIFICAÇÃO
-            #     - Se houver ao menos 2 páginas, usar doc[1] como 'target'.
-            #     - Se só há 1, cria uma nova página e usa como 'target'.
-            if doc.page_count >= 2:
-                target = doc[1]
-            else:
-                target = doc.new_page()
-
             # ===== PÁGINA 1: Cabeçalho + Serviços =====
             insert_right_of(page1, ["Cliente"], ss.cliente, dx=8, dy=1)
+
             insert_right_of(page1, ["Número do Bilhete", "Numero do Bilhete"], ss.numero_chamado, dx=8, dy=1)
             insert_right_of(page1, ["Designação do Circuito", "Designacao do Circuito"], ss.numero_chamado, dx=8, dy=1)
 
+            # Horários (de atendimento, seção do topo)
             insert_right_of(page1, ["Horário Início", "Horario Inicio", "Horario Início"],
                             ss.hora_inicio.strftime("%H:%M"), dx=8, dy=1)
             insert_right_of(page1, ["Horário Término", "Horario Termino", "Horário termino"],
                             ss.hora_termino.strftime("%H:%M"), dx=8, dy=1)
 
+            # Endereço Ponta A + N° (alinha na linha do PDF)
+            # Baseado no layout: "Endereço ponta A ____________________________ N° ____"
+            # 1) escreve Endereço à direita de "Endereço ponta A"
+            insert_right_of(page1, ["Endereço ponta A", "Endereço Ponta A"], ss.endereco_ponta_a, dx=8, dy=1)
+            # 2) encontra o "N°" da mesma linha e escreve o número do lado direito
+            no_rects = _all_hits(page1, ["N°", "Nº", "N °", "N o"])
+            base_rect = _first_hit(page1, ["Endereço ponta A", "Endereço Ponta A"])
+            if no_rects and base_rect:
+                # escolhe o "N°" mais próximo na horizontal (mesma faixa de Y)
+                same_line = [r for r in no_rects if abs((r.y0 + r.height/2) - (base_rect.y0 + base_rect.height/2)) < 12]
+                target_no = same_line[0] if same_line else no_rects[0]
+                x = target_no.x1 + 6
+                y = target_no.y0 + target_no.height/1.5 + 1
+                page1.insert_text((x, y), ss.numero_ponta_a or "", fontsize=10)
+
+            # Serviços – marcar X
             if ss.svc_instalacao:      mark_X_left_of(page1, "Instalação", dx=-16, dy=0)
             if ss.svc_retirada:        mark_X_left_of(page1, "Retirada", dx=-16, dy=0)
             if ss.svc_vistoria:        mark_X_left_of(page1, "Vistoria Tecnica", dx=-16, dy=0); mark_X_left_of(page1, "Vistoria Técnica", dx=-16, dy=0)
@@ -372,43 +364,54 @@ def render():
             if ss.svc_teste_conjunto:  mark_X_left_of(page1, "Teste em conjunto", dx=-16, dy=0)
             if ss.svc_servico_interno: mark_X_left_of(page1, "Serviço interno", dx=-16, dy=0); mark_X_left_of(page1, "Servico interno", dx=-16, dy=0)
 
-            # ===== IDENTIFICAÇÃO – ACEITE (sempre na página 'target' = página 2) =====
-            ident_region = compute_ident_region_on_page(target)
+            # ===== IDENTIFICAÇÃO – ACEITE (na PÁGINA 1, rodapé) =====
+            ident_region = compute_ident_region_page1(page1)
+
+            # Data/Horário AUTOMÁTICOS (momento de geração do PDF)
+            now = datetime.now()
+            data_auto = now.strftime("%d/%m/%Y")
+            hora_auto = now.strftime("%H:%M")
 
             # textos dentro da região
-            insert_right_of_in_region(target, ident_region, ["Técnico","Tecnico"], ss.tecnico_nome, dx=8, dy=1)
-            insert_right_of_in_region(target, ident_region, ["Cliente Ciente","Cliente  Ciente"], ss.cliente_ciente_nome, dx=8, dy=1)
-            insert_right_of_in_region(target, ident_region, ["Contato"], ss.contato, dx=8, dy=1)
-            insert_right_of_in_region(target, ident_region, ["Data"], ss.data_aceite.strftime("%d/%m/%Y"), dx=8, dy=1)
-            insert_right_of_in_region(target, ident_region, ["Horario","Horário"], ss.horario_aceite.strftime("%H:%M"), dx=8, dy=1)
-            insert_right_of_in_region(target, ident_region,
-                                      ["Aceitação do serviço pelo responsável","Aceitacao do servico pelo responsavel",
-                                       "Aceitação do serviço","Aceitacao do servico"],
-                                      ss.aceitacao_resp, dx=8, dy=1)
+            insert_right_of_in_region(page1, ident_region, ["Técnico","Tecnico"], ss.tecnico_nome, dx=8, dy=1)
+            insert_right_of_in_region(page1, ident_region, ["Cliente Ciente","Cliente  Ciente"], ss.cliente_ciente_nome, dx=8, dy=1)
+            insert_right_of_in_region(page1, ident_region, ["Contato"], ss.contato, dx=8, dy=1)
+            insert_right_of_in_region(page1, ident_region, ["Data"], data_auto, dx=8, dy=1)
+            insert_right_of_in_region(page1, ident_region, ["Horario","Horário"], hora_auto, dx=8, dy=1)
+            insert_right_of_in_region(
+                page1, ident_region,
+                ["Aceitação do serviço pelo responsável","Aceitacao do servico pelo responsavel",
+                 "Aceitação do serviço","Aceitacao do servico"],
+                ss.aceitacao_resp, dx=8, dy=1
+            )
 
             # S / N / N/A
             if ss.teste_wan == "S":
-                mark_X_left_of_in_region(target, ident_region, ["S"," S "], dx=-12, dy=0)
+                mark_X_left_of_in_region(page1, ident_region, ["S"," S "], dx=-12, dy=0)
             elif ss.teste_wan == "N":
-                mark_X_left_of_in_region(target, ident_region, ["N"," N "], dx=-12, dy=0)
+                mark_X_left_of_in_region(page1, ident_region, ["N"," N "], dx=-12, dy=0)
             else:
-                mark_X_left_of_in_region(target, ident_region, ["N/A","NA","N / A"], dx=-12, dy=0)
+                mark_X_left_of_in_region(page1, ident_region, ["N/A","NA","N / A"], dx=-12, dy=0)
 
-            # Assinaturas (duas âncoras "Assinatura") — subir 3 cm
+            # Assinaturas (duas âncoras "Assinatura") — sobem 3 cm
             up3 = 3 * CM
             labels_ass = ["Assinatura","ASSINATURA"]
-            insert_signature_png_in_region(target, ident_region, labels_ass, ss.sig_tec_png,
+            insert_signature_png_in_region(page1, ident_region, labels_ass, ss.sig_tec_png,
                                            (80, 20 - up3, 280, 90 - up3), occurrence=1)
-            insert_signature_png_in_region(target, ident_region, labels_ass, ss.sig_cli_png,
+            insert_signature_png_in_region(page1, ident_region, labels_ass, ss.sig_cli_png,
                                            (80, 20 - up3, 280, 90 - up3), occurrence=2)
 
-            # ===== EQUIPAMENTOS NO CLIENTE (na página 2) =====
-            eq_text = equipamentos_texto(ss.equip_cli, max_chars=90)
-            if eq_text.strip():
-                insert_textbox(target, ["EQUIPAMENTOS NO CLIENTE","Equipamentos no Cliente"],
-                               eq_text, width=540, y_offset=28, height=220, fontsize=9, align=0)
+            # ===== (Página 2 em diante) — Blocos técnicos =====
+            # Se houver página 2, escrevemos lá. Senão, criamos.
+            page2 = doc[1] if doc.page_count >= 2 else doc.new_page()
 
-            # ===== Problema / Ação Corretiva / Observações (regras produtivo) =====
+            # Equipamentos no Cliente — mais espaçamento (altura maior + fonte 9 + linha em branco entre itens)
+            eq_text = equipamentos_texto(ss.equip_cli, max_chars=95, add_blank_between=True)
+            if eq_text.strip():
+                insert_textbox(page2, ["EQUIPAMENTOS NO CLIENTE","Equipamentos no Cliente"],
+                               eq_text, width=540, y_offset=36, height=280, fontsize=9, align=0)
+
+            # Regras de Produtividade → Problema/Ação/Obs
             obs_lines=[]
             if ss.produtivo:
                 linha = f"Produtivo: {ss.produtivo}"
@@ -426,19 +429,19 @@ def render():
 
             problema_final = "\n".join([t for t in [problema_extra, (ss.problema_encontrado or '').strip()] if t])
             if problema_final:
-                insert_textbox(target, ["PROBLEMA ENCONTRADO","Problema Encontrado"],
+                insert_textbox(page2, ["PROBLEMA ENCONTRADO","Problema Encontrado"],
                                problema_final, width=540, y_offset=20, height=160, fontsize=10)
 
             if acao_extra:
-                insert_textbox(target, ["AÇÃO CORRETIVA","Acao Corretiva","Ação Corretiva"],
+                insert_textbox(page2, ["AÇÃO CORRETIVA","Acao Corretiva","Ação Corretiva"],
                                acao_extra, width=540, y_offset=20, height=120, fontsize=10)
 
             obs_final = "\n".join([t for t in [("\n".join(obs_lines)).strip(), (ss.observacoes or "").strip()] if t])
             if obs_final:
-                insert_textbox(target, ["OBSERVAÇÕES","Observacoes","Observações"],
+                insert_textbox(page2, ["OBSERVAÇÕES","Observacoes","Observações"],
                                obs_final, width=540, y_offset=20, height=160, fontsize=10)
 
-            # ===== Fotos do gateway: 1 página por foto =====
+            # Fotos do gateway: 1 página por foto
             for b in ss.fotos_gateway:
                 if b:
                     add_image_page(doc, b)
