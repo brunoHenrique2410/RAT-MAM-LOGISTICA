@@ -276,10 +276,10 @@ def render():
             wan_label = _first_hit(page1, ["Teste de conectividade WAN", "Teste final com equipamento do cliente"])
             if wan_label:
                 # offsets horizontais (ajuste fino conforme seu PDF)
-                pos_S  = wan_label.x1 + 200
+                pos_S  = wan_label.x1 + 180
                 pos_N  = wan_label.x1 + 80
-                pos_NA = wan_label.x1 + 120
-                ymark  = wan_label.y0  # mesma linha
+                pos_NA = wan_label.x1 + 210
+                ymark  = wan_label.y1  # mesma linha
                 if ss.teste_wan == "S":
                     page1.insert_text((pos_S, ymark), "X", fontsize=12)
                 elif ss.teste_wan == "N":
