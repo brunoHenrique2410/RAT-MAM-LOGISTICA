@@ -88,7 +88,7 @@ def insert_right_of_in_region(page, region, field_labels, content, dx=8, dy=1, f
     page.insert_text((x, y), str(content), fontsize=fontsize)
 
 def mark_X_left_of_in_region(page, region, field_labels, dx=-12, dy=0, fontsize=12):
-    if not region:
+    if not region:L
         return
     if isinstance(field_labels, str):
         field_labels = [field_labels]
