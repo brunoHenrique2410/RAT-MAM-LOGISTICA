@@ -1,6 +1,10 @@
-# repo/rat_oi_cpe.py — RAT OI CPE (preenche IDENTIFICAÇÃO – ACEITE; assinaturas +3 cm; equipamentos com selects; produtivo/BA/motivo)
+# repo/rat_oi_cpe.py — RAT OI CPE
+# - Preenche IDENTIFICAÇÃO – ACEITE DA ATIVIDADE por REGIÃO na página correta (auto-detect)
+# - Assinaturas ancoradas na região (+3 cm)
+# - Equipamentos no Cliente com UI simplificada (sem 'fabricante', caixas de texto + selects)
+# - Regras de Produtivo/BA/Motivo injetadas em Problema/Obs/Ação Corretiva
 
-# --- PATH FIX: permite importar common/ e pdf_templates/ a partir da raiz ---
+# --- PATH FIX: importa common/ e pdf_templates/ pela raiz ---
 import os
 import sys
 
@@ -8,7 +12,7 @@ THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(THIS_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------
 
 from io import BytesIO
 from datetime import date, time
@@ -23,10 +27,10 @@ from common.pdf import (
 )
 
 PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
-PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_OI_CPE_NOVO.pdf")
+PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT OI CPE NOVO.pdf")
 
 
-# ===================== Helpers de busca / região =====================
+# ===================== Helpers de busca/região =====================
 
 def _first_hit(page, labels):
     if isinstance(labels, str):
@@ -52,7 +56,10 @@ def _all_hits(page, labels):
     return rects
 
 def _find_region_between(page, start_labels, end_labels):
-    """Região (x0,y0,x1,y1) desde o título 'start' até o início do próximo bloco 'end'."""
+    """
+    Região (x0,y0,x1,y1) desde o título 'start' até o início do próximo bloco 'end'.
+    Se não achar 'end' abaixo, vai até o fim da página.
+    """
     start = _first_hit(page, start_labels)
     if not start:
         return None
@@ -105,8 +112,8 @@ def mark_X_left_of_in_region(page, region, field_labels, dx=-12, dy=0, fontsize=
 
 def insert_signature_png_in_region(page, region, label_variants, png_bytes, rel_rect, occurrence=1):
     """
-    Insere assinatura (PNG) procurando 'Assinatura' SOMENTE dentro da região.
-    rel_rect relativo ao label encontrado: (x0, dy0, x1, dy1) somados ao x0/y1 da âncora.
+    Assinatura (PNG) somente dentro da região. rel_rect relativo ao label:
+    (x0, dy0, x1, dy1) somados ao x0/y1 da âncora.
     """
     if not png_bytes or not region:
         return
@@ -129,39 +136,95 @@ def insert_signature_png_in_region(page, region, label_variants, png_bytes, rel_
     rect = fitz.Rect(x0, y0, x1, y1)
     page.insert_image(rect, stream=png_bytes, keep_proportion=True)
 
+def find_page_with_title(doc, title_variants):
+    """
+    Procura em todas as páginas e retorna (page, index) da primeira que contém o título.
+    """
+    if isinstance(title_variants, str):
+        title_variants = [title_variants]
+    for i in range(doc.page_count):
+        page = doc[i]
+        for t in title_variants:
+            try:
+                if page.search_for(t):
+                    return page, i
+            except Exception:
+                pass
+    return None, -1
 
-# ===================== Equipamentos =====================
+
+# ===================== Equipamentos (UI simplificada) =====================
 
 def _normalize_equip_rows(rows):
-    """Garante chaves fixas e evita perda de valores ao editar."""
+    """Sem 'fabricante'. Campos: tipo, numero_serie, modelo, status."""
     out = []
     for r in rows or []:
         out.append({
             "tipo": r.get("tipo", ""),
             "numero_serie": r.get("numero_serie", ""),
-            "fabricante": r.get("fabricante", ""),
             "modelo": r.get("modelo", ""),
             "status": r.get("status", ""),
         })
     if not out:
-        out = [{"tipo": "", "numero_serie": "", "fabricante": "", "modelo": "", "status": ""}]
+        out = [{"tipo": "", "numero_serie": "", "modelo": "", "status": ""}]
     return out
 
 def equipamentos_texto(rows):
     """
-    Texto simples para o bloco 'EQUIPAMENTOS NO CLIENTE' (não redesenha tabela).
-    Ex.: "- Tipo: ONT | Nº Série: ABC | Fab: XYZ | Mod: SynWay | Status: instalado pelo técnico"
+    Texto simples para 'EQUIPAMENTOS NO CLIENTE' (uma linha por item).
+    Ex.: "- Tipo: ONT | Nº Série: ABC | Mod: SynWay | Status: instalado pelo técnico"
     """
     rows = _normalize_equip_rows(rows)
     linhas = []
     for it in rows:
-        if not (it.get("tipo") or it.get("numero_serie") or it.get("fabricante") or it.get("modelo") or it.get("status")):
+        if not (it.get("tipo") or it.get("numero_serie") or it.get("modelo") or it.get("status")):
             continue
         linhas.append(
             f"- Tipo: {it.get('tipo','')} | Nº Série: {it.get('numero_serie','')} | "
-            f"Fab: {it.get('fabricante','')} | Mod: {it.get('modelo','')} | Status: {it.get('status','')}"
+            f"Mod: {it.get('modelo','')} | Status: {it.get('status','')}"
         )
     return "\n".join(linhas)
+
+def equipamentos_editor_simple():
+    """
+    Renderiza UI simples (sem tabela): caixas de texto + selects por linha.
+    """
+    ss = st.session_state
+    ss.equip_cli = _normalize_equip_rows(ss.equip_cli)
+    st.caption("Preencha ao menos 1 linha. (Modelo e Status com opções fixas.)")
+
+    modelo_opts = ["", "aligera", "SynWay"]
+    status_opts = ["", "equipamento no local", "instalado pelo técnico", "retirado pelo técnico",
+                   "spare técnico", "técnico não levou equipamento"]
+
+    # Botões para add/remover linhas
+    a1, a2 = st.columns([1,1])
+    with a1:
+        if st.button("➕ Adicionar linha"):
+            ss.equip_cli.append({"tipo": "", "numero_serie": "", "modelo": "", "status": ""})
+    with a2:
+        if st.button("➖ Remover última linha") and len(ss.equip_cli) > 1:
+            ss.equip_cli.pop()
+
+    # Render de cada linha
+    for i, it in enumerate(ss.equip_cli):
+        st.markdown(f"**Item {i+1}**")
+        c1, c2, c3, c4 = st.columns([2,2,1.2,1.8])
+        with c1:
+            it["tipo"] = st.text_input("Tipo", value=it.get("tipo",""), key=f"equip_{i}_tipo")
+        with c2:
+            it["numero_serie"] = st.text_input("Nº de Série", value=it.get("numero_serie",""), key=f"equip_{i}_sn")
+        with c3:
+            it["modelo"] = st.selectbox("Modelo", ["", "aligera", "SynWay"], index=["","aligera","SynWay"].index(it.get("modelo","") if it.get("modelo","") in ["aligera","SynWay"] else ""), key=f"equip_{i}_modelo")
+        with c4:
+            # status select
+            cur_status = it.get("status","")
+            if cur_status not in status_opts:
+                cur_status = ""
+            it["status"] = st.selectbox("Status", status_opts, index=status_opts.index(cur_status), key=f"equip_{i}_status")
+        st.divider()
+
+    ss.equip_cli = _normalize_equip_rows(ss.equip_cli)
 
 
 # ===================== UI + Geração =====================
@@ -187,7 +250,7 @@ def render():
         "svc_servico_interno": False,
 
         # Identificação – Aceite
-        "teste_wan": "NA",  # (UI renomeada: "Teste final com equipamento do cliente?")
+        "teste_wan": "NA",  # UI: "Teste final com equipamento do cliente?"
         "tecnico_nome": "",
         "cliente_ciente_nome": "",
         "contato": "",
@@ -197,8 +260,8 @@ def render():
         "sig_tec_png": None,
         "sig_cli_png": None,
 
-        # Equipamentos
-        "equip_cli": [{"tipo": "", "numero_serie": "", "fabricante": "", "modelo": "", "status": ""}],
+        # Equipamentos (sem fabricante)
+        "equip_cli": [{"tipo": "", "numero_serie": "", "modelo": "", "status": ""}],
 
         # Textos
         "problema_encontrado": "",
@@ -224,7 +287,7 @@ def render():
             ss.numero_chamado = st.text_input("Número do Chamado (preenche Bilhete/Designação)", value=ss.numero_chamado)
             ss.hora_inicio = st.time_input("Horário Início", value=ss.hora_inicio)
         with c2:
-            ss.hora_termino = st.time_input("Horário Término", value=ss.hora_termino)
+            ss.hora_termino = st.time_input("Horário Término", value=ss.horario_aceite if ss.get("horario_aceite") else ss.hora_termino)
             ss.suporte_mam = st.text_input("Nome do suporte MAM", value=ss.suporte_mam)
 
     # ---------- 2) Serviços ----------
@@ -258,36 +321,16 @@ def render():
             ss.horario_aceite = st.time_input("Horário", value=ss.horario_aceite)
             ss.aceitacao_resp = st.text_input("Aceitação do serviço pelo responsável", value=ss.aceitacao_resp)
 
-        assinatura_dupla_png()  # ss.sig_tec_png / ss.sig_cli_png
+        assinatura_dupla_png()  # preenche ss.sig_tec_png / ss.sig_cli_png
 
-    # ---------- 4) Equipamentos no Cliente ----------
+    # ---------- 4) Equipamentos no Cliente (UI simples) ----------
     with st.expander("4) Equipamentos no Cliente", expanded=True):
-        st.caption("Preencha ao menos 1 linha. (Modelo e Status têm opções fixas.)")
-        ss.equip_cli = _normalize_equip_rows(ss.equip_cli)
-
-        modelo_opts = ["", "aligera", "SynWay"]
-        status_opts = ["", "equipamento no local", "instalado pelo técnico", "retirado pelo técnico",
-                       "spare técnico", "técnico não levou equipamento"]
-
-        data = st.data_editor(
-            ss.equip_cli,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="equip_cli_editor",
-            column_config={
-                "tipo": st.column_config.TextColumn("Tipo"),
-                "numero_serie": st.column_config.TextColumn("Nº de Série"),
-                "fabricante": st.column_config.TextColumn("Fabricante"),
-                "modelo": st.column_config.SelectboxColumn("Modelo", options=modelo_opts, required=False),
-                "status": st.column_config.SelectboxColumn("Status", options=status_opts, required=False),
-            },
-        )
-        ss.equip_cli = _normalize_equip_rows(data)
+        equipamentos_editor_simple()
 
     # ---------- 5) Produtividade / Textos ----------
     with st.expander("5) Produtividade & Textos", expanded=True):
         ss.produtivo = st.selectbox(
-            "Produtivo",
+            "Produtivo?",
             ["sim-totalmente produtivo", "sim-com BA", "não-improdutivo"],
             index=["sim-totalmente produtivo", "sim-com BA", "não-improdutivo"].index(ss.produtivo)
         )
@@ -312,7 +355,19 @@ def render():
     if st.button("🧾 Gerar PDF (OI CPE)"):
         try:
             doc, page1 = open_pdf_template(PDF_BASE_PATH, hint="RAT OI CPE NOVO")
-            page2 = doc[1] if doc.page_count >= 2 else page1  # normalmente a região alvo está na 2ª página
+
+            # ================= Página com IDENTIFICAÇÃO – ACEITE =================
+            # Descobre a página correta pelo título da seção
+            ident_titles = [
+                "IDENTIFICAÇÃO – ACEITE DA ATIVIDADE",
+                "Identificação – Aceite da Atividade",
+                "IDENTIFICACAO - ACEITE DA ATIVIDADE",
+                "Identificacao - Aceite da Atividade",
+            ]
+            target, target_idx = find_page_with_title(doc, ident_titles)
+            if target is None:
+                # fallback: usa página 2 se existir, senão página 1
+                target = doc[1] if doc.page_count >= 2 else page1
 
             # ===== PÁGINA 1: Cabeçalho + Serviços =====
             insert_right_of(page1, ["Cliente"], ss.cliente, dx=8, dy=1)
@@ -332,24 +387,24 @@ def render():
             if ss.svc_teste_conjunto:  mark_X_left_of(page1, "Teste em conjunto", dx=-16, dy=0)
             if ss.svc_servico_interno: mark_X_left_of(page1, "Serviço interno", dx=-16, dy=0); mark_X_left_of(page1, "Servico interno", dx=-16, dy=0)
 
-            # ===== PARTE 2: IDENTIFICAÇÃO – ACEITE / Equip / Textos =====
-            target = page2
-
+            # ===== IDENTIFICAÇÃO – ACEITE (na página 'target') =====
             ident_region = _find_region_between(
                 target,
-                start_labels=["IDENTIFICAÇÃO – ACEITE DA ATIVIDADE", "Identificação – Aceite da Atividade",
-                              "IDENTIFICACAO - ACEITE DA ATIVIDADE", "Identificacao - Aceite da Atividade"],
-                end_labels=["EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente",
-                            "INFORMAÇÕES TECNICAS DO CIRCUITO", "INFORMACOES TECNICAS DO CIRCUITO",
-                            "PROBLEMA ENCONTRADO", "Problema Encontrado",
-                            "OBSERVAÇÕES", "Observacoes", "Observações"]
+                start_labels=ident_titles,
+                end_labels=[
+                    "EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente",
+                    "INFORMAÇÕES TECNICAS DO CIRCUITO", "INFORMACOES TECNICAS DO CIRCUITO",
+                    "PROBLEMA ENCONTRADO", "Problema Encontrado",
+                    "OBSERVAÇÕES", "Observacoes", "Observações",
+                    "EQUIPAMENTOS",  # alguns templates usam apenas "EQUIPAMENTOS"
+                ],
             )
-            # Fallback: se não achou o título (variações), usa metade inferior da página
             if ident_region is None:
+                # fallback: metade inferior da página
                 r = target.rect
                 ident_region = (r.x0, r.y0 + (r.height * 0.35), r.x1, r.y1)
 
-            # Campos dentro da região (exatamente como no seu template)
+            # Campos de texto dentro da região (exatos do template que você enviou)
             insert_right_of_in_region(target, ident_region, ["Técnico", "Tecnico"], ss.tecnico_nome, dx=8, dy=1)
             insert_right_of_in_region(target, ident_region, ["Cliente Ciente", "Cliente  Ciente"], ss.cliente_ciente_nome, dx=8, dy=1)
             insert_right_of_in_region(target, ident_region, ["Contato"], ss.contato, dx=8, dy=1)
@@ -362,8 +417,7 @@ def render():
                 ss.aceitacao_resp, dx=8, dy=1
             )
 
-            # S / N / N/A (pergunta do template: “Teste de conectividade WAN realizado com sucesso? S N N/A”)
-            # Marcamos X nos rótulos S / N / N/A dentro da região.
+            # S / N / N/A dentro da região
             if ss.teste_wan == "S":
                 mark_X_left_of_in_region(target, ident_region, ["S", " S "], dx=-12, dy=0)
             elif ss.teste_wan == "N":
@@ -379,7 +433,7 @@ def render():
             insert_signature_png_in_region(target, ident_region, labels_ass, ss.sig_cli_png,
                                            (80, 20 - up3, 280, 90 - up3), occurrence=2)
 
-            # "EQUIPAMENTOS NO CLIENTE" — texto simples no bloco
+            # ===== EQUIPAMENTOS NO CLIENTE (na mesma página 'target') =====
             eq_text = equipamentos_texto(ss.equip_cli)
             if eq_text.strip():
                 insert_textbox(
@@ -389,7 +443,7 @@ def render():
                     width=540, y_offset=28, height=220, fontsize=9, align=0
                 )
 
-            # Regras Produtivo/BA/Motivo + textos livres
+            # ===== Problema / Ação Corretiva / Observações (regras produtivo) =====
             obs_lines = []
             if ss.produtivo:
                 linha = f"Produtivo: {ss.produtivo}"
