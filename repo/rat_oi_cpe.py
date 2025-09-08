@@ -279,7 +279,7 @@ def render():
                 pos_S  = wan_label.x1 + 120
                 pos_N  = wan_label.x1 + 170
                 pos_NA = wan_label.x1 + 210
-                ymark  = wan_label.y0,5  # mesma linha
+                ymark  = wan_label.y1  # mesma linha
                 if ss.teste_wan == "S":
                     page1.insert_text((pos_S, ymark), "X", fontsize=12)
                 elif ss.teste_wan == "N":
