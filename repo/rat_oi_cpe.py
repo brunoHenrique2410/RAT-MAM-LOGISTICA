@@ -268,8 +268,8 @@ def render():
 
             tech_x = None
             if tech_slot and ss.sig_tec_png:
-                rect = fitz.Rect(tech_slot.x0 + 40, tech_slot.y0 - 6,
-                                 tech_slot.x0 + 60 + 190, tech_slot.y0 + 15)
+                rect = fitz.Rect(tech_slot.x0 + 40, tech_slot.y0 - 20,
+                                 tech_slot.x0 + 60 + 190, tech_slot.y0 + 25)
                 tech_x = rect.x0
                 page1.insert_image(rect, stream=ss.sig_tec_png, keep_proportion=True)
 
