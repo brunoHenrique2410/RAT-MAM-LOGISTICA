@@ -275,7 +275,7 @@ def render():
 
             if cli_slot and ss.sig_cli_png:
                 base_x = tech_x if tech_x is not None else (cli_slot.x0 + 20)
-                rect = fitz.Rect(base_x, cli_slot.y120 - 30, base_x + 200, cli_slot.y0 + 2)
+                rect = fitz.Rect(base_x, cli_slot.y0 - 30, base_x + 200, cli_slot.y0 + 120)
                 page1.insert_image(rect, stream=ss.sig_cli_png, keep_proportion=True)
 
             # Contato
