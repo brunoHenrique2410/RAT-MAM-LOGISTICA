@@ -170,26 +170,83 @@ def render():
             ss.svc_teste_conjunto = st.checkbox("Teste em conjunto", value=ss.svc_teste_conjunto)
             ss.svc_servico_interno= st.checkbox("Serviço interno", value=ss.svc_servico_interno)
 
-    # 3) Identificação – Aceite
-    with st.expander("3) Identificação – Aceite da Atividade", expanded=True):
-        ss.teste_wan = st.radio("Teste final com equipamento do cliente?", ["S","N","NA"],
-                                index=["S","N","NA"].index(ss.teste_wan))
-        c1,c2 = st.columns(2)
-        with c1:
-            ss.tecnico_nome = st.text_input("Técnico (nome)", value=ss.tecnico_nome)
-            ss.cliente_ciente_nome = st.text_input("Cliente ciente (nome)", value=ss.cliente_ciente_nome)
-            ss.contato = st.text_input("Contato (telefone)", value=ss.contato)
-        with c2:
-            ss.aceitacao_resp = st.text_input("Aceitação do serviço pelo responsável", value=ss.aceitacao_resp)
+ # ===== Identificação – Aceite (pág.1) =====
 
-        st.checkbox("Usar data/hora atuais na geração do PDF (fuso do aparelho se disponível)", value=ss.usar_agora, key="usar_agora")
-        tz_opts = ["America/Sao_Paulo","America/Manaus","America/Bahia","America/Fortaleza","UTC"]
-        prefill_tz = (ss.browser_tz or ss.tz_name or DEFAULT_TZ)
-        if prefill_tz not in tz_opts: tz_opts = [prefill_tz]+tz_opts
-        ss.tz_name = st.selectbox("Fuso horário", tz_opts, index=0)
-        ss.tz_custom = st.text_input("Fuso (avançado, opcional)", value=ss.tz_custom)
+# 1) Checkbox do “Teste final com equipamento do cliente?”
+#    -> marca X exatamente no quadrinho à esquerda da âncora (S / N / N/A)
+if ss.teste_wan == "S":
+    mark_X_left_of(page1, "S", dx=-10, dy=-2)
+elif ss.teste_wan == "N":
+    mark_X_left_of(page1, "N", dx=-10, dy=-2)
+else:  # "NA"
+    # o template costuma ter "N/A" (às vezes “N / A”). Testamos as duas.
+    if not mark_X_left_of(page1, "N/A", dx=-10, dy=-2):
+        mark_X_left_of(page1, "N / A", dx=-10, dy=-2)
 
-        assinatura_dupla_png()
+# 2) Nomes (continuam iguais)
+insert_right_of(page1, ["Técnico","Tecnico"], ss.tecnico_nome, dx=8, dy=1)
+insert_right_of(page1, ["Cliente Ciente","Cliente  Ciente"], ss.cliente_ciente_nome, dx=8, dy=1)
+insert_right_of(page1, ["Contato"], ss.contato, dx=8, dy=1)
+
+# 3) Assinaturas — ANCORAGEM ROBUSTA
+#    Em vez de procurar duas palavras “Assinatura”, ancoramos por “Técnico” e “Cliente Ciente”.
+#    • Tec: um pouco à direita da legenda “Assinatura” da 1ª linha (logo abaixo de “Técnico”)
+#    • Cliente: mesma coluna do técnico, meia polegada (~36 pt) acima da linha de “Assinatura” do cliente
+
+def _rect_for_signature_from_anchor(page, anchor_labels, dx_left=60, up_px=6, width=200, height=38):
+    """Encontra o rótulo (ex.: 'Técnico') e monta um retângulo de assinatura
+       na linha de 'Assinatura' logo abaixo dele, com deslocamentos controlados."""
+    anchor = None
+    for lbl in anchor_labels:
+        hits = page.search_for(lbl)
+        if hits:
+            anchor = hits[0]
+            break
+    if not anchor:
+        return None
+    # linha de assinatura fica ~24–28 pt abaixo do rótulo no template
+    y_top = anchor.y0 + 24 - up_px
+    x_left = anchor.x0 + dx_left
+    return fitz.Rect(x_left, y_top, x_left + width, y_top + height)
+
+# assinatura do técnico (um “tiquinho” para a direita e levemente para cima)
+tech_rect = _rect_for_signature_from_anchor(page1, ["Técnico","Tecnico"], dx_left=70, up_px=8, width=210, height=42)
+if tech_rect and ss.sig_tec_png:
+    page1.insert_image(tech_rect, stream=ss.sig_tec_png, keep_proportion=True)
+
+# assinatura do cliente — mesma coluna do técnico e “meia polegada” (~36 pt) acima do traço
+cli_anchor = None
+for lbl in ["Cliente Ciente","Cliente  Ciente"]:
+    hits = page1.search_for(lbl)
+    if hits:
+        cli_anchor = hits[0]
+        break
+
+if cli_anchor and ss.sig_cli_png:
+    # base na mesma coluna X do técnico (se disponível); senão, usa 70 pt à direita do rótulo
+    base_x = tech_rect.x0 if tech_rect else (cli_anchor.x0 + 70)
+    y_top = cli_anchor.y0 + 24 - 36  # sobe ~0,5"
+    cli_rect = fitz.Rect(base_x, y_top, base_x + 210, y_top + 42)
+    page1.insert_image(cli_rect, stream=ss.sig_cli_png, keep_proportion=True)
+
+# 4) Data / Horário (mesma lógica — agora só garante espaçamento visual melhor)
+if ss.usar_agora:
+    tzname = (ss.browser_tz.strip() or ss.tz_custom.strip() or ss.tz_name or DEFAULT_TZ)
+    try:
+        tz = ZoneInfo(tzname)
+    except:
+        tz = ZoneInfo(DEFAULT_TZ)
+    now = datetime.now(tz=tz)
+    insert_right_of(page1, ["Data"], now.strftime("%d/%m/%Y"), dx=8, dy=1)
+    insert_right_of(page1, ["Horario","Horário"], now.strftime("%H:%M"), dx=8, dy=1)
+else:
+    # (se quiser deixar manual aqui, pode)
+    pass
+
+# Aceitação do responsável
+insert_right_of(page1, ["Aceitação do serviço pelo responsável","Aceitacao do servico pelo responsavel"],
+                ss.aceitacao_resp, dx=8, dy=1)
+
 
     # 4) Equipamentos
     with st.expander("4) Equipamentos no Cliente", expanded=True):
