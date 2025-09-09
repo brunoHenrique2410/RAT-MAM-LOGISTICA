@@ -347,7 +347,7 @@ def render():
                 if (ss.suporte_mam or "").strip():
                     linha += f" - acompanhado pelo analista {ss.suporte_mam}"
                 else:
-                    linha += " - acompanhado pelo analista"
+                    linha += " - acompanhado pelo(a) analista"
                 obs_lines.append(linha)
 
             problema_extra = ""
