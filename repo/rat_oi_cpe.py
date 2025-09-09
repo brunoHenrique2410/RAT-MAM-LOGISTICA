@@ -298,24 +298,76 @@ def render():
             # ===== Página 2 =====
             page2 = doc[1] if doc.page_count >= 2 else doc.new_page()
 
-            # Equipamentos (linhas)
-            eq_anchor = _first_hit(page2, ["EQUIPAMENTOS NO CLIENTE","Equipamentos no Cliente"])
-            if eq_anchor:
-                X_OFFSET = 0; Y_START=36; LINE_W=520; LINE_H=26; FONT_SZ=10
-                def txt(it):
-                    parts=[]
-                    if it.get("tipo"): parts.append(f": {it['tipo']}")
-                    if it.get("numero_serie"): parts.append(f": {it['numero_serie']}")
-                    if it.get("modelo"): parts.append(f": {it['modelo']}")
-                    if it.get("status"): parts.append(f" {it['status']}")
-                    return " | ".join(parts)
-                for idx,it in enumerate(ss.equip_cli):
-                    t = txt(it).strip()
-                    if not t: continue
-                    y_rel = Y_START + idx*LINE_H
-                    rect = fitz.Rect(eq_anchor.x0 + X_OFFSET, eq_anchor.y1 + y_rel,
-                                     eq_anchor.x0 + X_OFFSET + LINE_W, eq_anchor.y1 + y_rel + LINE_H)
-                    page2.insert_textbox(rect, t, fontsize=FONT_SZ, align=0)
+# --- Equipamentos (colunas independentes) ---
+def _first_hit(page, labels):
+    if isinstance(labels, str):
+        labels = [labels]
+    for t in labels:
+        try:
+            hits = page.search_for(t)
+            if hits:
+                return hits[0]
+        except:
+            pass
+    return None
+
+eq_title = _first_hit(page2, ["EQUIPAMENTOS NO CLIENTE","Equipamentos no Cliente"])
+if eq_title:
+    # Tente achar os cabeçalhos das colunas. Usamos alternativos caso o PDF varie.
+    col_tipo   = _first_hit(page2, ["Tipo"])
+    col_sn     = _first_hit(page2, ["Nº de Serie","N° de Serie","Nº de Série","No de Serie","N de Serie"])
+    col_modelo = _first_hit(page2, ["Modelo","Fabricante"])   # se não tiver "Modelo", usa "Fabricante" como base
+    col_status = _first_hit(page2, ["Status"])
+
+    # Se algum cabeçalho não for encontrado, derivamos a partir do título da área
+    base_x = eq_title.x0
+    col_tipo_x   = (col_tipo.x0   if col_tipo   else base_x +  10)
+    col_sn_x     = (col_sn.x0     if col_sn     else base_x + 180)
+    col_modelo_x = (col_modelo.x0 if col_modelo else base_x + 320)
+    col_status_x = (col_status.x0 if col_status else base_x + 470)
+
+    # Ajustes finos por coluna (mude aqui para "mover" cada campo)
+    DX = {
+        "tipo": 0,          # + move p/ direita, - p/ esquerda
+        "sn":  0,
+        "modelo": 0,
+        "status": 0,
+    }
+    DY = 2  # ajuste vertical leve para centralizar com a linha da tabela
+
+    # Geometria das linhas
+    TOP_OFFSET = 36   # onde começa a primeira linha abaixo do título
+    ROW_DY     = 26   # altura entre linhas
+    FONT_SZ    = 10
+
+    for i, it in enumerate(ss.equip_cli):
+        y = eq_title.y1 + TOP_OFFSET + i * ROW_DY
+
+        # Tipo
+        if it.get("tipo"):
+            page2.insert_text(
+                (col_tipo_x + DX["tipo"], y + DY),
+                str(it["tipo"]), fontsize=FONT_SZ
+            )
+        # Nº de Série (S/N)
+        if it.get("numero_serie"):
+            page2.insert_text(
+                (col_sn_x + DX["sn"], y + DY),
+                str(it["numero_serie"]), fontsize=FONT_SZ
+            )
+        # Modelo
+        if it.get("modelo"):
+            page2.insert_text(
+                (col_modelo_x + DX["modelo"], y + DY),
+                str(it["modelo"]), fontsize=FONT_SZ
+            )
+        # Status
+        if it.get("status"):
+            page2.insert_text(
+                (col_status_x + DX["status"], y + DY),
+                str(it["status"]), fontsize=FONT_SZ
+            )
+
 
             # Regras de produtividade → Problema / Ação / Observações
             obs_lines=[]
