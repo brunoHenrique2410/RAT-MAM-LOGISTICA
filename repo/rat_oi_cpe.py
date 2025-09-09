@@ -251,8 +251,8 @@ def render():
             wan_label = _first_hit(page1, ["Teste de conectividade WAN","Teste final com equipamento do cliente"])
             if wan_label:
                 pos_S  = wan_label.x1 + 138
-                pos_N  = wan_label.x1 + 238
-                pos_NA = wan_label.x1 + 308
+                pos_N  = wan_label.x1 + 165
+                pos_NA = wan_label.x1 + 200
                 ymark  = wan_label.y0 + 11
                 page1.insert_text((pos_S if ss.teste_wan=="S" else pos_N if ss.teste_wan=="N" else pos_NA, ymark), "X", fontsize=12)
 
