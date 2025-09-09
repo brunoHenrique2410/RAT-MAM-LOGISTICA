@@ -298,18 +298,18 @@ def render():
             # ===== Página 2 =====
             page2 = doc[1] if doc.page_count >= 2 else doc.new_page()
 
-# --- Equipamentos (colunas independentes) ---
-def _first_hit(page, labels):
-    if isinstance(labels, str):
-        labels = [labels]
-    for t in labels:
-        try:
-            hits = page.search_for(t)
-            if hits:
+            # --- Equipamentos (colunas independentes) ---
+                def _first_hit(page, labels):
+                    if isinstance(labels, str):
+                        labels = [labels]
+                    for t in labels:
+                    try:
+                    hits = page.search_for(t)
+                if hits:
                 return hits[0]
-        except:
-            pass
-    return None
+                    except:
+                    pass
+                return None
 
 eq_title = _first_hit(page2, ["EQUIPAMENTOS NO CLIENTE","Equipamentos no Cliente"])
 if eq_title:
