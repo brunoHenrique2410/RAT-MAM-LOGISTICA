@@ -253,7 +253,7 @@ def render():
                 pos_S  = wan_label.x1 + 192
                 pos_N  = wan_label.x1 + 238
                 pos_NA = wan_label.x1 + 308
-                ymark  = wan_label.y0 + 10
+                ymark  = wan_label.y0 + 11
                 page1.insert_text((pos_S if ss.teste_wan=="S" else pos_N if ss.teste_wan=="N" else pos_NA, ymark), "X", fontsize=12)
 
             # Nomes
