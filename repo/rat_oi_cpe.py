@@ -1,6 +1,11 @@
-# repo/rat_oi_cpe.py — RAT OI CPE (assinaturas ancoradas por Técnico/Cliente,
-#                           cliente +6px, WAN offsets fixos, TZ selecionável,
-#                           contato correto, endereço Ponta A + Nº, equipamentos com mais espaço)
+# repo/rat_oi_cpe.py — RAT OI CPE
+# Ajustes:
+# - Assinatura TÉCNICO: mais à direita (+60 pt) e um pouco acima (-8 pt)
+# - Assinatura CLIENTE: sobe ~0,5" (-36 pt vs baseline da âncora) e usa o MESMO X da assinatura do técnico
+# - Fuso horário "automático" via navegador (experimental) com fallback para seletor
+# - Equipamentos: insere item-a-item, cada um numa linha/posição própria (fácil de calibrar)
+#
+# Requer: common/pdf.py, common/ui.py, common/state.py e PDF "RAT OI CPE NOVO.pdf" em pdf_templates/
 
 import os, sys
 from io import BytesIO
@@ -8,6 +13,7 @@ from datetime import date, time, datetime
 from zoneinfo import ZoneInfo
 
 import streamlit as st
+import streamlit.components.v1 as components
 import fitz  # PyMuPDF
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -19,15 +25,15 @@ from common.state import init_defaults
 from common.ui import assinatura_dupla_png, foto_gateway_uploader
 from common.pdf import (
     open_pdf_template, insert_right_of, insert_textbox, mark_X_left_of,
-    add_image_page, CM
+    add_image_page
 )
 
 PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
-PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_OI_CPE_NOVO.pdf")
+PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT OI CPE NOVO.pdf")
 
 DEFAULT_TZ = "America/Sao_Paulo"
 
-# ------------------------ helpers de busca ------------------------
+# ================= helpers de âncora =================
 
 def _all_hits(page, labels):
     if isinstance(labels, str):
@@ -45,19 +51,19 @@ def _first_hit(page, labels):
     return hits[0] if hits else None
 
 def _nearest_to(page, label, near_rect, max_dy=30):
-    """Retorna o rect do label com Y mais próximo de near_rect (mesma linha), se existir."""
+    if near_rect is None:
+        return None
     cands = _all_hits(page, label)
-    if not cands or near_rect is None:
+    if not cands:
         return None
     cy = near_rect.y0 + near_rect.height/2
-    cands_sorted = sorted(cands, key=lambda r: abs((r.y0 + r.height/2) - cy))
-    best = cands_sorted[0]
+    cands.sort(key=lambda r: abs((r.y0 + r.height/2) - cy))
+    best = cands[0]
     if abs((best.y0 + best.height/2) - cy) <= max_dy:
         return best
     return best
 
 def _assinatura_anchor_near_label(page, label_rect):
-    """Escolhe a âncora 'Assinatura' com y > label_rect.y0 e menor delta-y."""
     if label_rect is None:
         return None
     anchors = _all_hits(page, ["Assinatura", "ASSINATURA"])
@@ -69,7 +75,7 @@ def _assinatura_anchor_near_label(page, label_rect):
     below.sort(key=lambda r: (abs(r.y0 - label_rect.y0), r.x0))
     return below[0]
 
-# ------------------------ Equipamentos (UI vertical) ------------------------
+# ================= equipamentos: item-a-item =================
 
 def _normalize_equip_rows(rows):
     out=[]
@@ -84,33 +90,11 @@ def _normalize_equip_rows(rows):
         out=[{"tipo":"","numero_serie":"","modelo":"","status":""}]
     return out
 
-def equipamentos_texto(rows, max_chars=95, add_blank_between=True):
-    """
-    Texto para 'EQUIPAMENTOS NO CLIENTE' (uma linha por item),
-    com quebra automática e linha em branco entre itens p/ aumentar o espaçamento.
-    """
-    rows = _normalize_equip_rows(rows)
-    linhas=[]
-    for it in rows:
-        if not (it.get("tipo") or it.get("numero_serie") or it.get("modelo") or it.get("status")):
-            continue
-        base = f"- Tipo: {it.get('tipo','')} | Nº Série: {it.get('numero_serie','')} | Mod: {it.get('modelo','')} | Status: {it.get('status','')}"
-        if len(base) <= max_chars:
-            linhas.append(base)
-        else:
-            linhas.append(base[:max_chars].rstrip())
-            linhas.append("  " + base[max_chars:].lstrip())
-        if add_blank_between:
-            linhas.append("")
-    while linhas and not linhas[-1].strip():
-        linhas.pop()
-    return "\n".join(linhas)
-
 def equipamentos_editor_vertical():
     ss = st.session_state
     ss.equip_cli = _normalize_equip_rows(ss.equip_cli)
 
-    st.caption("Preencha os itens (inputs verticais).")
+    st.caption("Preencha os itens (inputs verticais). Cada item será posicionado em uma linha própria no PDF.")
     modelo_opts  = ["", "aligera", "SynWay"]
     status_opts  = ["", "equipamento no local", "instalado pelo técnico", "retirado pelo técnico",
                     "spare técnico", "técnico não levou equipamento"]
@@ -137,7 +121,35 @@ def equipamentos_editor_vertical():
 
     ss.equip_cli = _normalize_equip_rows(ss.equip_cli)
 
-# ------------------------ UI principal + geração ------------------------
+# ================ fuso auto (experimental) ================
+
+def _try_detect_browser_tz():
+    """
+    Tenta detectar o TZ do navegador via JS e joga no session_state['browser_tz'].
+    Nem todo ambiente do Streamlit permite; se não funcionar, ignora silenciosamente.
+    """
+    components.html(
+        """
+        <script>
+        (function(){
+          try {
+            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+            const streamlitDoc = window.parent.document;
+            const el = streamlitDoc.querySelector('input[data-testid="__tz_input"]');
+            if (el) {
+              const setVal = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+              setVal.call(el, tz);
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          } catch(e) {}
+        })();
+        </script>
+        <input data-testid="__tz_input" style="display:none" />
+        """,
+        height=0
+    )
+
+# ===================== UI principal + geração =====================
 
 def render():
     st.header("🔌 RAT OI CPE NOVO")
@@ -158,7 +170,7 @@ def render():
         "svc_alteracao": False, "svc_mudanca": False, "svc_teste_conjunto": False,
         "svc_servico_interno": False,
 
-        # Identificação – Aceite
+        # Aceite
         "teste_wan": "NA",
         "tecnico_nome": "", "cliente_ciente_nome": "",
         "contato": "", "data_aceite": date.today(),
@@ -169,6 +181,7 @@ def render():
         "usar_agora": True,
         "tz_name": DEFAULT_TZ,
         "tz_custom": "",
+        "browser_tz": "",
 
         # Equipamentos
         "equip_cli": [{"tipo":"","numero_serie":"","modelo":"","status":""}],
@@ -188,6 +201,11 @@ def render():
     })
 
     ss = st.session_state
+
+    # Tentativa de auto-TZ via navegador
+    _try_detect_browser_tz()
+    # campo oculto que o JS tenta preencher
+    st.text_input("browser_tz_hidden", value=ss.browser_tz, key="browser_tz", label_visibility="hidden")
 
     # 1) Cabeçalho
     with st.expander("1) Cabeçalho", expanded=True):
@@ -234,9 +252,16 @@ def render():
             ss.aceitacao_resp = st.text_input("Aceitação do serviço pelo responsável", value=ss.aceitacao_resp)
 
         st.checkbox("Usar data/hora atuais na geração do PDF", value=ss.usar_agora, key="usar_agora")
+
         tz_opts = ["America/Sao_Paulo","America/Manaus","America/Bahia","America/Fortaleza","UTC"]
-        ss.tz_name = st.selectbox("Fuso horário", tz_opts, index=tz_opts.index(ss.tz_name) if ss.tz_name in tz_opts else 0)
-        ss.tz_custom = st.text_input("Fuso horário (avançado: digite um TZ válido opcional)", value=ss.tz_custom)
+        # se o browser forneceu TZ, usar como sugestão
+        prefill_tz = (ss.browser_tz or ss.tz_name or DEFAULT_TZ)
+        if prefill_tz not in tz_opts:
+            tz_opts = [prefill_tz] + tz_opts
+        ss.tz_name = st.selectbox("Fuso horário (auto se detectado)", tz_opts,
+                                  index=0, help="Se seu aparelho informar o fuso, ele aparece aqui em primeiro.")
+        ss.tz_custom = st.text_input("Fuso (avançado, opcional)", value=ss.tz_custom)
+
         assinatura_dupla_png()  # preenche ss.sig_tec_png / ss.sig_cli_png
 
     # 4) Equipamentos (verticais)
@@ -320,13 +345,30 @@ def render():
                 else:
                     page1.insert_text((pos_NA, ymark), "X", fontsize=12)
 
-            # Técnico — nome
+            # Técnico — nome + assinatura (mais à direita e um pouco acima)
             insert_right_of(page1, ["Técnico","Tecnico"], ss.tecnico_nome, dx=8, dy=1)
             tec_label = _first_hit(page1, ["Técnico","Tecnico"])
+            x_tec_sig0 = None
+            if tec_label and ss.sig_tec_png:
+                anchor_tec = _assinatura_anchor_near_label(page1, tec_label)
+                if anchor_tec:
+                    # >>> ajuste solicitado: +60 pt à direita, -8 pt para cima
+                    rect = fitz.Rect(anchor_tec.x0 + 60, anchor_tec.y0 - 8,
+                                     anchor_tec.x0 + 60 + 200, anchor_tec.y0 + 42)
+                    x_tec_sig0 = rect.x0
+                    page1.insert_image(rect, stream=ss.sig_tec_png, keep_proportion=True)
 
-            # Cliente ciente — nome
+            # Cliente — nome + assinatura (meia polegada pra cima e alinhado no X do técnico)
             insert_right_of(page1, ["Cliente Ciente","Cliente  Ciente"], ss.cliente_ciente_nome, dx=8, dy=1)
             cli_label = _first_hit(page1, ["Cliente Ciente","Cliente  Ciente"])
+            if cli_label and ss.sig_cli_png:
+                anchor_cli = _assinatura_anchor_near_label(page1, cli_label)
+                if anchor_cli:
+                    # >>> ajuste solicitado: mesma coluna X do técnico; subir ~0,5" (36 pt)
+                    base_x = x_tec_sig0 if x_tec_sig0 is not None else anchor_cli.x0 + 60
+                    rect = fitz.Rect(base_x, anchor_cli.y0 - 36,
+                                     base_x + 200, anchor_cli.y0 + 14)
+                    page1.insert_image(rect, stream=ss.sig_cli_png, keep_proportion=True)
 
             # Contato (âncora na mesma linha do cliente, se possível)
             contato_anchor = _nearest_to(page1, ["Contato"], cli_label, max_dy=40)
@@ -337,35 +379,16 @@ def render():
             else:
                 insert_right_of(page1, ["Contato"], ss.contato, dx=8, dy=1)
 
-            # Assinaturas — âncoras específicas por rótulo
-            # Técnico → âncora mais próxima abaixo de "Técnico"
-            if ss.sig_tec_png:
-                anchor_tec = _assinatura_anchor_near_label(page1, tec_label)
-                if anchor_tec:
-                    # levemente acima do baseline da âncora (sobe ~6 pt)
-                    rect = fitz.Rect(anchor_tec.x0, anchor_tec.y0 - 6, anchor_tec.x0 + 200, anchor_tec.y0 + 44)
-                    page1.insert_image(rect, stream=ss.sig_tec_png, keep_proportion=True)
-
-            # Cliente → âncora mais próxima abaixo de "Cliente Ciente"
-            if ss.sig_cli_png:
-                anchor_cli = _assinatura_anchor_near_label(page1, cli_label)
-                if anchor_cli:
-                    # subir 6 px vs a versão anterior (era +28, agora +22)
-                    rect = fitz.Rect(anchor_cli.x0, anchor_cli.y0 + 22, anchor_cli.x0 + 200, anchor_cli.y0 + 72)
-                    page1.insert_image(rect, stream=ss.sig_cli_png, keep_proportion=True)
-
-            # Data / Horário (com TZ)
+            # Data / Horário (com TZ: browser > custom > seletor > default)
             if ss.usar_agora:
-                tzname = (ss.tz_custom.strip() or ss.tz_name or DEFAULT_TZ)
+                tzname = (ss.browser_tz.strip() or ss.tz_custom.strip() or ss.tz_name or DEFAULT_TZ)
                 try:
                     tz = ZoneInfo(tzname)
                 except Exception:
                     tz = ZoneInfo(DEFAULT_TZ)
                 now = datetime.now(tz=tz)
-                data_auto = now.strftime("%d/%m/%Y")
-                hora_auto = now.strftime("%H:%M")
-                insert_right_of(page1, ["Data"], data_auto, dx=8, dy=1)
-                insert_right_of(page1, ["Horario","Horário"], hora_auto, dx=8, dy=1)
+                insert_right_of(page1, ["Data"], now.strftime("%d/%m/%Y"), dx=8, dy=1)
+                insert_right_of(page1, ["Horario","Horário"], now.strftime("%H:%M"), dx=8, dy=1)
             else:
                 insert_right_of(page1, ["Data"], ss.data_aceite.strftime("%d/%m/%Y"), dx=8, dy=1)
                 insert_right_of(page1, ["Horario","Horário"], ss.horario_aceite.strftime("%H:%M"), dx=8, dy=1)
@@ -378,11 +401,38 @@ def render():
             # ===== PÁGINA 2: Blocos técnicos =====
             page2 = doc[1] if doc.page_count >= 2 else doc.new_page()
 
-            # Equipamentos no Cliente — mais espaço
-            eq_text = equipamentos_texto(ss.equip_cli, max_chars=95, add_blank_between=True)
-            if eq_text.strip():
-                insert_textbox(page2, ["EQUIPAMENTOS NO CLIENTE","Equipamentos no Cliente"],
-                               eq_text, width=540, y_offset=36, height=300, fontsize=9, align=0)
+            # ---- Equipamentos: item-a-item em posições próprias ----
+            # Âncora de referência:
+            eq_anchor = _first_hit(page2, ["EQUIPAMENTOS NO CLIENTE","Equipamentos no Cliente"])
+            if eq_anchor:
+                # Configurável: deslocamentos
+                X_OFFSET = 0            # ajuste fino horizontal a partir do x0 da âncora
+                Y_START  = 36           # distância inicial abaixo da âncora
+                LINE_W   = 520          # largura útil de linha
+                LINE_H   = 26           # altura entre linhas
+                FONT_SZ  = 10
+                # Campo de texto de cada item (apenas a resposta)
+                # Montagem do texto de cada item (pode alterar a ordem/labels aqui se quiser)
+                def _txt(it):
+                    parts=[]
+                    if it.get("tipo"): parts.append(f"Tipo: {it['tipo']}")
+                    if it.get("numero_serie"): parts.append(f"S/N: {it['numero_serie']}")
+                    if it.get("modelo"): parts.append(f"Mod: {it['modelo']}")
+                    if it.get("status"): parts.append(f"Status: {it['status']}")
+                    return " | ".join(parts)
+                # Caso precise calibrar linha a linha, altere Y_START / LINE_H ou crie uma lista de Ys.
+                EQUIP_Y_STEPS = []  # se quiser posições 100% custom, preencha manualmente (ex.: [36, 68, 100, ...])
+                for idx, it in enumerate(ss.equip_cli):
+                    txt = _txt(it).strip()
+                    if not txt: 
+                        continue
+                    if EQUIP_Y_STEPS:
+                        y_rel = EQUIP_Y_STEPS[min(idx, len(EQUIP_Y_STEPS)-1)]
+                    else:
+                        y_rel = Y_START + idx * LINE_H
+                    rect = fitz.Rect(eq_anchor.x0 + X_OFFSET, eq_anchor.y1 + y_rel,
+                                     eq_anchor.x0 + X_OFFSET + LINE_W, eq_anchor.y1 + y_rel + LINE_H)
+                    page2.insert_textbox(rect, txt, fontsize=FONT_SZ, align=0)
 
             # Regras de Produtividade → Problema/Ação/Obs
             obs_lines=[]
