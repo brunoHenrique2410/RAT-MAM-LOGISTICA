@@ -250,10 +250,10 @@ def render():
             # Checkboxes S/N/N-A — offsets recalibrados (pelo seu print)
             wan_label = _first_hit(page1, ["Teste de conectividade WAN","Teste final com equipamento do cliente"])
             if wan_label:
-                pos_S  = wan_label.x1 + 58
-                pos_N  = wan_label.x1 + 98
-                pos_NA = wan_label.x1 + 154
-                ymark  = wan_label.y0 + 2
+                pos_S  = wan_label.x1 + 192
+                pos_N  = wan_label.x1 + 238
+                pos_NA = wan_label.x1 + 308
+                ymark  = wan_label.y0 + 16
                 page1.insert_text((pos_S if ss.teste_wan=="S" else pos_N if ss.teste_wan=="N" else pos_NA, ymark), "X", fontsize=12)
 
             # Nomes
@@ -268,8 +268,8 @@ def render():
 
             tech_x = None
             if tech_slot and ss.sig_tec_png:
-                rect = fitz.Rect(tech_slot.x0 + 60, tech_slot.y0 - 6,
-                                 tech_slot.x0 + 60 + 200, tech_slot.y0 + 32)
+                rect = fitz.Rect(tech_slot.x0 + 40, tech_slot.y0 - 6,
+                                 tech_slot.x0 + 60 + 280, tech_slot.y0 + 32)
                 tech_x = rect.x0
                 page1.insert_image(rect, stream=ss.sig_tec_png, keep_proportion=True)
 
