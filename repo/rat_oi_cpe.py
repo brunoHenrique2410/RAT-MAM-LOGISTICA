@@ -304,10 +304,10 @@ def render():
                 X_OFFSET = 0; Y_START=36; LINE_W=520; LINE_H=26; FONT_SZ=10
                 def txt(it):
                     parts=[]
-                    if it.get("tipo"): parts.append(f"Tipo: {it['tipo']}")
-                    if it.get("numero_serie"): parts.append(f"S/N: {it['numero_serie']}")
-                    if it.get("modelo"): parts.append(f"Mod: {it['modelo']}")
-                    if it.get("status"): parts.append(f"Status: {it['status']}")
+                    if it.get("tipo"): parts.append(f": {it['tipo']}")
+                    if it.get("numero_serie"): parts.append(f": {it['numero_serie']}")
+                    if it.get("modelo"): parts.append(f": {it['modelo']}")
+                    if it.get("status"): parts.append(f" {it['status']}")
                     return " | ".join(parts)
                 for idx,it in enumerate(ss.equip_cli):
                     t = txt(it).strip()
