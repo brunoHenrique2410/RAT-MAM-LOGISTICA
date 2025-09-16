@@ -403,7 +403,7 @@ def render():
             if cli_slot and (ss.validador_tel or "").strip() and num_label_rect is not None:
                 x = num_label_rect.x0  # “mesmo X” do label Nº
                 y = cli_slot.y0 + cli_slot.height/1.5 + 90 # “mesmo Y” da linha de assinatura do cliente
-                page1.insert_text((x, y), f"Contato: {ss.validador_tel.strip()}", fontsize=10)
+                page1.insert_text((x, y), f"{ss.validador_tel.strip()}", fontsize=10)
 
             # Data / Horário (auto fuso do navegador)
             if ss.usar_agora:
