@@ -353,7 +353,7 @@ def render():
                 elif base_rect:
                     # sem âncora de telefone → imprime na linha do responsável, após o nome
                     y = resp_lbl.y0 + resp_lbl.height/1.5 + 1
-                    page1.insert_text((resp_lbl.x1 + 280, y), f"{ss.responsavel_tel or ''}", fontsize=10)
+                    page1.insert_text((resp_lbl.x1 + 265, y), f"{ss.responsavel_tel or ''}", fontsize=10)
             elif base_rect:
                 # fallback: imprime uma linha acima do endereço
                 y = base_rect.y0 - 10
