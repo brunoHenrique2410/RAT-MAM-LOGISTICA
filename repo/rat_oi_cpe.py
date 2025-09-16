@@ -358,7 +358,7 @@ def render():
                 # fallback: imprime uma linha acima do endereço
                 y = base_rect.y0 - 10
                 page1.insert_text((base_rect.x0, y), f"Responsável: {ss.responsavel_local or ''}", fontsize=10)
-                page1.insert_text((base_rect.x0 + 300, y), f"{ss.responsavel_tel or ''}", fontsize=10)
+                page1.insert_text((base_rect.x0 + 320, y), f"{ss.responsavel_tel or ''}", fontsize=10)
 
             # Serviços (pág.1)
             if ss.svc_instalacao:      mark_X_left_of(page1, "Instalação", dx=-16, dy=0)
