@@ -1,4 +1,4 @@
-# repo/rat_oi_cpe.py — RAT OI CPE (responsável local + tel na pág.1, contato do validador na linha da assinatura do cliente)
+# repo/rat_oi_cpe.py — RAT OI CPE (responsável local + tel garantidos; contato do validador alinhado a "Nº (Ponta A)" e Y da assinatura do cliente)
 import os, sys
 from io import BytesIO
 from datetime import time, datetime
@@ -147,7 +147,6 @@ def _insert_blind_fields_and_cover_with_gateway(doc: fitz.Document, ss):
     x0, y0 = 36, 36
     line_h, fsize = 10, 6
     white=(1,1,1)
-
     def put_line(txt):
         nonlocal y0
         page.insert_text((x0,y0), txt or " ", fontsize=fsize, color=white)
@@ -333,16 +332,18 @@ def render():
 
             # Endereço Ponta A + Nº
             insert_right_of(page1, ["Endereço ponta A","Endereço Ponta A"], ss.endereco_ponta_a, dx=8, dy=1)
+            num_label_rect = None
             no_rects = _all_hits(page1, ["N°","Nº","N o","N °"])
             base_rect = _first_hit(page1, ["Endereço ponta A","Endereço Ponta A"])
             if no_rects and base_rect:
                 same_line=[r for r in no_rects if abs((r.y0+r.height/2)-(base_rect.y0+base_rect.height/2))<12]
                 target_no = same_line[0] if same_line else no_rects[0]
+                num_label_rect = target_no  # guardamos para alinhar o telefone do validador
                 x = target_no.x1 + 6
                 y = target_no.y0 + target_no.height/1.5 + 1
                 page1.insert_text((x,y), ss.numero_ponta_a or "", fontsize=10)
 
-            # Responsável local + Telefone (tenta âncoras; se não achar, desenha acima do endereço)
+            # Responsável local + Telefone (âncora ou fallback forçado)
             resp_lbl = _first_hit(page1, ["Responsável local","RESPONSÁVEL LOCAL","Responsavel local","Responsável","Responsavel"])
             tel_resp_lbl = _first_hit(page1, ["Telefone do responsável","Telefone do Responsável","Tel. Responsável","Telefone Resp."])
             if resp_lbl:
@@ -351,8 +352,12 @@ def render():
                 if tel_resp_lbl:
                     insert_right_of(page1, ["Telefone do responsável","Telefone do Responsável","Tel. Responsável","Telefone Resp."],
                                     ss.responsavel_tel, dx=8, dy=1)
+                elif base_rect:
+                    # sem âncora de telefone → imprime na linha do responsável, após o nome
+                    y = resp_lbl.y0 + resp_lbl.height/1.5 + 1
+                    page1.insert_text((resp_lbl.x1 + 240, y), f"Tel.: {ss.responsavel_tel or ''}", fontsize=10)
             elif base_rect:
-                # fallback: imprime uma linha acima do endereço (mesma página)
+                # fallback: imprime uma linha acima do endereço
                 y = base_rect.y0 - 10
                 page1.insert_text((base_rect.x0, y), f"Responsável: {ss.responsavel_local or ''}", fontsize=10)
                 page1.insert_text((base_rect.x0 + 300, y), f"Tel.: {ss.responsavel_tel or ''}", fontsize=10)
@@ -376,7 +381,6 @@ def render():
                 page1.insert_text((pos_S if ss.teste_wan=="S" else pos_N if ss.teste_wan=="N" else pos_NA, ymark), "X", fontsize=12)
 
             insert_right_of(page1, ["Técnico","Tecnico"], ss.tecnico_nome, dx=8, dy=1)
-            # UI = “Cliente validador”, mas ainda ancoramos em “Cliente Ciente” do template
             insert_right_of(page1, ["Cliente Ciente","Cliente  Ciente","Cliente Validador"], ss.cliente_validador_nome, dx=8, dy=1)
 
             # Assinaturas
@@ -397,11 +401,10 @@ def render():
                 rect = fitz.Rect(base_x, cli_slot.y0 - 10, base_x + 200, cli_slot.y0 + 145)
                 page1.insert_image(rect, stream=ss.sig_cli_png, keep_proportion=True)
 
-            # Contato do validador na MESMA LINHA da assinatura do cliente
-            if cli_slot and (ss.validador_tel or "").strip():
-                # imprime à direita do rótulo "Assinatura" do cliente
-                x = cli_slot.x1 + 40
-                y = cli_slot.y0 + cli_slot.height/1.5 + 4
+            # Contato do validador: MESMO X do rótulo "Nº (Ponta A)" e MESMO Y da linha da assinatura do cliente
+            if cli_slot and (ss.validador_tel or "").strip() and num_label_rect is not None:
+                x = num_label_rect.x0  # “mesmo X” do label Nº
+                y = cli_slot.y0 + cli_slot.height/1.5 + 1  # “mesmo Y” da linha de assinatura do cliente
                 page1.insert_text((x, y), f"Contato: {ss.validador_tel.strip()}", fontsize=10)
 
             # Data / Horário (auto fuso do navegador)
