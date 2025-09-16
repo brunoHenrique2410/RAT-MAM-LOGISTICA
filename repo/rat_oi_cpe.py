@@ -215,7 +215,6 @@ def render():
         with c1:
             ss.cliente = st.text_input("Cliente", value=ss.cliente)
             ss.numero_chamado = st.text_input("Número do Chamado (preenche Bilhete/Designação)", value=ss.numero_chamado)
-            ss.hora_inicio = st.time_input("Horário Início", value=ss.hora_inicio)
         with c2:
             ss.hora_termino = st.time_input("Horário Término", value=ss.hora_termino)
             ss.suporte_mam = st.text_input("Nome do suporte MAM", value=ss.suporte_mam)
@@ -327,7 +326,6 @@ def render():
             insert_right_of(page1, ["Cliente"], ss.cliente, dx=8, dy=1)
             insert_right_of(page1, ["Número do Bilhete","Numero do Bilhete"], ss.numero_chamado, dx=8, dy=1)
             insert_right_of(page1, ["Designação do Circuito","Designacao do Circuito"], ss.numero_chamado, dx=8, dy=1)
-            insert_right_of(page1, ["Horário Início","Horario Inicio","Horario Início"], ss.hora_inicio.strftime("%H:%M"), dx=8, dy=1)
             insert_right_of(page1, ["Horário Término","Horario Termino","Horário termino"], ss.hora_termino.strftime("%H:%M"), dx=8, dy=1)
 
             # Endereço Ponta A + Nº
@@ -355,12 +353,12 @@ def render():
                 elif base_rect:
                     # sem âncora de telefone → imprime na linha do responsável, após o nome
                     y = resp_lbl.y0 + resp_lbl.height/1.5 + 1
-                    page1.insert_text((resp_lbl.x1 + 240, y), f"Tel.: {ss.responsavel_tel or ''}", fontsize=10)
+                    page1.insert_text((resp_lbl.x1 + 240, y), f"{ss.responsavel_tel or ''}", fontsize=10)
             elif base_rect:
                 # fallback: imprime uma linha acima do endereço
                 y = base_rect.y0 - 10
                 page1.insert_text((base_rect.x0, y), f"Responsável: {ss.responsavel_local or ''}", fontsize=10)
-                page1.insert_text((base_rect.x0 + 300, y), f"Tel.: {ss.responsavel_tel or ''}", fontsize=10)
+                page1.insert_text((base_rect.x0 + 300, y), f"{ss.responsavel_tel or ''}", fontsize=10)
 
             # Serviços (pág.1)
             if ss.svc_instalacao:      mark_X_left_of(page1, "Instalação", dx=-16, dy=0)
