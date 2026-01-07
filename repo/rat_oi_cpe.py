@@ -574,19 +574,19 @@ def render():
                     if b:
                         add_image_page(doc, b)
 
-                stamp_text = (
-                "Gerado automaticamente\n"
-                f"{now.strftime('%d/%m/%Y %H:%M')} • Chamado {ss.numero_chamado or '-'}"
-                    )
-
-                    add_generation_stamp(
-                    page1,
-                    SELO_IMG,
-                    stamp_text,
-                    where="bottom_right",  # pode trocar p/ top_right se quiser
-                    scale=0.55,
-                    opacity=0.85
+            stamp_text = (
+            "Gerado automaticamente\n"
+            f"{now.strftime('%d/%m/%Y %H:%M')} • Chamado {ss.numero_chamado or '-'}"
                 )
+
+                add_generation_stamp(
+                page1,
+                SELO_IMG,
+                stamp_text,
+                where="bottom_right",  # pode trocar p/ top_right se quiser
+                scale=0.55,
+                opacity=0.85
+            )
 
             out = BytesIO()
             doc.save(out)
