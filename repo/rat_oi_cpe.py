@@ -478,24 +478,27 @@ def render():
                 y = cli_slot.y0 + cli_slot.height / 1.5 + 55
                 page1.insert_text((x, y), f"{ss.validador_tel.strip()}", fontsize=10)
 
-            # Data / Horário (última linha): ancora no "Data/Horario" de baixo (maior y) e fonte menor
+
+                # Data / Horário (última linha)
             if ss.usar_agora:
                 tzname = (ss.browser_tz.strip() or DEFAULT_TZ)
-                try:
-                    tz = ZoneInfo(tzname)
-                except Exception:
-                    tz = ZoneInfo(DEFAULT_TZ)
+            try:
+                tz = ZoneInfo(tzname)
+            except Exception:
+                tz = ZoneInfo(DEFAULT_TZ)
 
-                now = datetime.now(tz=tz)
-                data_txt = now.strftime("%d/%m/%Y")
-                hora_txt = now.strftime("%H:%M")
+            now = datetime.now(tz=tz)
 
-                r_data_bottom = _pick_hit_bottom(page1, ["Data"])
-                r_hora_bottom = _pick_hit_bottom(page1, ["Horario", "Horário"])
+            # ✅ DATA ESPAÇADA
+            data_txt = f"{now.strftime('%d')}  {now.strftime('%m')}   {now.strftime('%Y')}"
+            hora_txt = now.strftime("%H:%M")
 
-                # Se por algum motivo achar "Data" do topo, tente pegar o mais embaixo mesmo.
-                _write_right_of_rect(page1, r_data_bottom, data_txt, dx=6, dy=1, fontsize=9)
-                _write_right_of_rect(page1, r_hora_bottom, hora_txt, dx=6, dy=1, fontsize=9)
+            r_data_bottom = _pick_hit_bottom(page1, ["Data"])
+            r_hora_bottom = _pick_hit_bottom(page1, ["Horario", "Horário"])
+
+            _write_right_of_rect(page1, r_data_bottom, data_txt, dx=6, dy=3, fontsize=8)
+            _write_right_of_rect(page1, r_hora_bottom, hora_txt, dx=6, dy=1, fontsize=9)
+
 
             insert_right_of(page1, ["Aceitação do serviço pelo responsável", "Aceitacao do servico pelo responsavel"],
                             ss.aceitacao_resp, dx=8, dy=1)
