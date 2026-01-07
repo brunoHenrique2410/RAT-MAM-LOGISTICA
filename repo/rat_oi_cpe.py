@@ -1,4 +1,6 @@
 # repo/rat_oi_cpe.py — RAT OI CPE (responsável local + tel garantidos; contato do validador alinhado a "Nº (Ponta A)" e Y da assinatura do cliente)
+# ✅ ATUALIZAÇÃO: adiciona Horário Início no formulário e no PDF; Horário Término já existia; Data/Horário do preenchimento já é automático.
+
 import os, sys
 from io import BytesIO
 from datetime import time, datetime
@@ -27,57 +29,64 @@ DEFAULT_TZ = "America/Sao_Paulo"
 
 # ---------- helpers ----------
 def _all_hits(page, labels):
-    if isinstance(labels, str): labels=[labels]
-    out=[]
+    if isinstance(labels, str):
+        labels = [labels]
+    out = []
     for t in labels:
-        try: out.extend(page.search_for(t))
-        except Exception: pass
+        try:
+            out.extend(page.search_for(t))
+        except Exception:
+            pass
     return out
 
 def _first_hit(page, labels):
-    r=_all_hits(page, labels)
+    r = _all_hits(page, labels)
     return r[0] if r else None
 
 # ---------- equipamentos (vertical) ----------
 def _normalize_equip_rows(rows):
-    out=[]
+    out = []
     for r in rows or []:
         out.append({
-            "tipo": r.get("tipo",""),
-            "numero_serie": r.get("numero_serie",""),
-            "modelo": r.get("modelo",""),
-            "status": r.get("status",""),
+            "tipo": r.get("tipo", ""),
+            "numero_serie": r.get("numero_serie", ""),
+            "modelo": r.get("modelo", ""),
+            "status": r.get("status", ""),
         })
     if not out:
-        out=[{"tipo":"","numero_serie":"","modelo":"","status":""}]
+        out = [{"tipo": "", "numero_serie": "", "modelo": "", "status": ""}]
     return out
 
 def equipamentos_editor_vertical():
     ss = st.session_state
     ss.equip_cli = _normalize_equip_rows(ss.equip_cli)
 
-    modelo_opts  = ["", "aligera", "SynWay"]
-    status_opts  = ["", "equipamento no local", "instalado pelo técnico", "retirado pelo técnico",
-                    "spare técnico", "técnico não levou equipamento"]
+    modelo_opts = ["", "aligera", "SynWay"]
+    status_opts = ["", "equipamento no local", "instalado pelo técnico", "retirado pelo técnico",
+                   "spare técnico", "técnico não levou equipamento"]
 
-    cA,cB = st.columns(2)
+    cA, cB = st.columns(2)
     with cA:
         if st.button("➕ Adicionar item"):
-            ss.equip_cli.append({"tipo":"","numero_serie":"","modelo":"","status":""})
+            ss.equip_cli.append({"tipo": "", "numero_serie": "", "modelo": "", "status": ""})
     with cB:
-        if st.button("➖ Remover último") and len(ss.equip_cli)>1:
+        if st.button("➖ Remover último") and len(ss.equip_cli) > 1:
             ss.equip_cli.pop()
 
-    for i,it in enumerate(ss.equip_cli):
+    for i, it in enumerate(ss.equip_cli):
         st.markdown(f"**Item {i+1}**")
-        it["tipo"] = st.text_input("Tipo", value=it.get("tipo",""), key=f"equip_{i}_tipo")
-        it["numero_serie"] = st.text_input("Nº de Série", value=it.get("numero_serie",""), key=f"equip_{i}_sn")
-        it["modelo"] = st.selectbox("Modelo", modelo_opts,
-                                    index=(modelo_opts.index(it.get("modelo","")) if it.get("modelo","") in modelo_opts else 0),
-                                    key=f"equip_{i}_modelo")
-        it["status"] = st.selectbox("Status", status_opts,
-                                    index=(status_opts.index(it.get("status","")) if it.get("status","") in status_opts else 0),
-                                    key=f"equip_{i}_status")
+        it["tipo"] = st.text_input("Tipo", value=it.get("tipo", ""), key=f"equip_{i}_tipo")
+        it["numero_serie"] = st.text_input("Nº de Série", value=it.get("numero_serie", ""), key=f"equip_{i}_sn")
+        it["modelo"] = st.selectbox(
+            "Modelo", modelo_opts,
+            index=(modelo_opts.index(it.get("modelo", "")) if it.get("modelo", "") in modelo_opts else 0),
+            key=f"equip_{i}_modelo"
+        )
+        it["status"] = st.selectbox(
+            "Status", status_opts,
+            index=(status_opts.index(it.get("status", "")) if it.get("status", "") in status_opts else 0),
+            key=f"equip_{i}_status"
+        )
         st.divider()
 
     ss.equip_cli = _normalize_equip_rows(ss.equip_cli)
@@ -128,9 +137,9 @@ def _insert_blind_fields_and_cover_with_gateway(doc: fitz.Document, ss):
     # Produtividade
     prod = (ss.produtivo or "").strip()
     fields["produtivo"] = prod
-    fields["produtivo_parcial_tipo"] = (ss.prod_parcial_tipo or "").strip() if prod=="produtivo parcial" else ""
-    fields["ba_num"] = (ss.ba_num or "").strip() if (prod=="produtivo parcial" and ss.prod_parcial_tipo=="com BA") else ""
-    fields["motivo_improdutivo"] = (ss.motivo_improdutivo or "").strip() if prod=="não-improdutivo" else ""
+    fields["produtivo_parcial_tipo"] = (ss.prod_parcial_tipo or "").strip() if prod == "produtivo parcial" else ""
+    fields["ba_num"] = (ss.ba_num or "").strip() if (prod == "produtivo parcial" and ss.prod_parcial_tipo == "com BA") else ""
+    fields["motivo_improdutivo"] = (ss.motivo_improdutivo or "").strip() if prod == "não-improdutivo" else ""
     fields["suporte_mam"] = (ss.suporte_mam or "").strip()
 
     # Equipamento (1º item)
@@ -146,26 +155,27 @@ def _insert_blind_fields_and_cover_with_gateway(doc: fitz.Document, ss):
     # imprime “apagado” (branco)
     x0, y0 = 36, 36
     line_h, fsize = 10, 6
-    white=(1,1,1)
+    white = (1, 1, 1)
+
     def put_line(txt):
         nonlocal y0
-        page.insert_text((x0,y0), txt or " ", fontsize=fsize, color=white)
+        page.insert_text((x0, y0), txt or " ", fontsize=fsize, color=white)
         y0 += line_h
 
     for k in [
-        "numero_chamado","cliente","responsavel_local","responsavel_tel",
-        "endereco_ponta_a","numero_ponta_a",
-        "tecnico","cliente_validador","validador_tel","teste_final","aceitacao_resp",
-        "produtivo","produtivo_parcial_tipo","ba_num","motivo_improdutivo","suporte_mam",
-        "equip_modelo","equip_sn","equip_status","observacoes"
+        "numero_chamado", "cliente", "responsavel_local", "responsavel_tel",
+        "endereco_ponta_a", "numero_ponta_a",
+        "tecnico", "cliente_validador", "validador_tel", "teste_final", "aceitacao_resp",
+        "produtivo", "produtivo_parcial_tipo", "ba_num", "motivo_improdutivo", "suporte_mam",
+        "equip_modelo", "equip_sn", "equip_status", "observacoes"
     ]:
-        put_line(f"[[FIELD:{k}={fields.get(k,'')}]]")
+        put_line(f"[[FIELD:{k}={fields.get(k, '')}]]")
 
     # cobre com a 1ª foto do gateway
     if ss.fotos_gateway:
         try:
             img_bytes = ss.fotos_gateway[0]
-            rect = fitz.Rect(18, 18, page.rect.width-18, page.rect.height-18)
+            rect = fitz.Rect(18, 18, page.rect.width - 18, page.rect.height - 18)
             page.insert_image(rect, stream=img_bytes, keep_proportion=True)
         except Exception:
             pass
@@ -176,7 +186,8 @@ def render():
 
     init_defaults({
         "cliente": "", "numero_chamado": "",
-        "hora_inicio": time(8,0), "hora_termino": time(10,0),
+        "hora_inicio": time(8, 0),                 # ✅ usado no form + PDF agora
+        "hora_termino": time(10, 0),
 
         # novo: responsável local + telefone (antes do endereço)
         "responsavel_local": "", "responsavel_tel": "",
@@ -194,7 +205,7 @@ def render():
 
         "browser_tz": "", "usar_agora": True,
 
-        "equip_cli": [{"tipo":"","numero_serie":"","modelo":"","status":""}],
+        "equip_cli": [{"tipo": "", "numero_serie": "", "modelo": "", "status": ""}],
         "observacoes": "",
         "suporte_mam": "",
         "produtivo": "sim-totalmente produtivo",
@@ -211,47 +222,53 @@ def render():
 
     # 1) Cabeçalho
     with st.expander("1) Cabeçalho", expanded=True):
-        c1,c2 = st.columns(2)
+        c1, c2 = st.columns(2)
         with c1:
             ss.cliente = st.text_input("Cliente", value=ss.cliente)
             ss.numero_chamado = st.text_input("Número do Chamado (preenche Bilhete/Designação)", value=ss.numero_chamado)
+
         with c2:
+            # ✅ ADICIONADO: Horário Início
+            ss.hora_inicio = st.time_input("Horário Início", value=ss.hora_inicio)
             ss.hora_termino = st.time_input("Horário Término", value=ss.hora_termino)
             ss.suporte_mam = st.text_input("Nome do suporte MAM", value=ss.suporte_mam)
 
         st.markdown("**Responsável local** (antes do endereço)")
-        cRL, cRT = st.columns([3,2])
+        cRL, cRT = st.columns([3, 2])
         with cRL:
             ss.responsavel_local = st.text_input("Responsável local (nome)", value=ss.responsavel_local)
         with cRT:
             ss.responsavel_tel = st.text_input("Telefone do responsável local", value=ss.responsavel_tel)
 
         st.markdown("**Endereço Ponta A (preenche linha ‘Endereço ponta A … N° …’ do PDF):**")
-        c3,c4 = st.columns([4,1])
+        c3, c4 = st.columns([4, 1])
         with c3:
             ss.endereco_ponta_a = st.text_input("Endereço Ponta A", value=ss.endereco_ponta_a)
         with c4:
-            ss.numero_ponta_a   = st.text_input("Nº (Ponta A)", value=ss.numero_ponta_a)
+            ss.numero_ponta_a = st.text_input("Nº (Ponta A)", value=ss.numero_ponta_a)
 
     # 2) Serviços
     with st.expander("2) Serviços e Atividades Solicitadas", expanded=True):
-        c1,c2,c3 = st.columns(3)
+        c1, c2, c3 = st.columns(3)
         with c1:
             ss.svc_instalacao = st.checkbox("Instalação", value=ss.svc_instalacao)
-            ss.svc_retirada   = st.checkbox("Retirada", value=ss.svc_retirada)
-            ss.svc_vistoria   = st.checkbox("Vistoria Técnica", value=ss.svc_vistoria)
+            ss.svc_retirada = st.checkbox("Retirada", value=ss.svc_retirada)
+            ss.svc_vistoria = st.checkbox("Vistoria Técnica", value=ss.svc_vistoria)
         with c2:
-            ss.svc_alteracao  = st.checkbox("Alteração Técnica", value=ss.svc_alteracao)
-            ss.svc_mudanca    = st.checkbox("Mudança de Endereço", value=ss.svc_mudanca)
+            ss.svc_alteracao = st.checkbox("Alteração Técnica", value=ss.svc_alteracao)
+            ss.svc_mudanca = st.checkbox("Mudança de Endereço", value=ss.svc_mudanca)
         with c3:
             ss.svc_teste_conjunto = st.checkbox("Teste em conjunto", value=ss.svc_teste_conjunto)
-            ss.svc_servico_interno= st.checkbox("Serviço interno", value=ss.svc_servico_interno)
+            ss.svc_servico_interno = st.checkbox("Serviço interno", value=ss.svc_servico_interno)
 
     # 3) Identificação – Aceite
     with st.expander("3) Identificação – Aceite da Atividade", expanded=True):
-        ss.teste_wan = st.radio("Teste final com equipamento do cliente?", ["S","N","NA"],
-                                index=["S","N","NA"].index(ss.teste_wan))
-        c1,c2 = st.columns(2)
+        ss.teste_wan = st.radio(
+            "Teste final com equipamento do cliente?",
+            ["S", "N", "NA"],
+            index=["S", "N", "NA"].index(ss.teste_wan)
+        )
+        c1, c2 = st.columns(2)
         with c1:
             ss.tecnico_nome = st.text_input("Técnico (nome)", value=ss.tecnico_nome)
             ss.cliente_validador_nome = st.text_input("Cliente validador (nome)", value=ss.cliente_validador_nome)
@@ -268,15 +285,19 @@ def render():
     # 5) Produtividade & Observações
     with st.expander("5) Produtividade & Observações", expanded=True):
         ss.produtivo = st.selectbox(
-            "Produtivo?", ["sim-totalmente produtivo", "produtivo parcial", "não-improdutivo"],
+            "Produtivo?",
+            ["sim-totalmente produtivo", "produtivo parcial", "não-improdutivo"],
             index=["sim-totalmente produtivo", "produtivo parcial", "não-improdutivo"].index(ss.produtivo)
         )
 
         # Só quando “produtivo parcial”
         if ss.produtivo == "produtivo parcial":
-            ss.prod_parcial_tipo = st.radio("Tipo de parcial", ["com BA", "problema PABX"],
-                                            index=(["com BA","problema PABX"].index(ss.prod_parcial_tipo)
-                                                   if ss.prod_parcial_tipo in ["com BA","problema PABX"] else 0))
+            ss.prod_parcial_tipo = st.radio(
+                "Tipo de parcial",
+                ["com BA", "problema PABX"],
+                index=(["com BA", "problema PABX"].index(ss.prod_parcial_tipo)
+                       if ss.prod_parcial_tipo in ["com BA", "problema PABX"] else 0)
+            )
             if ss.prod_parcial_tipo == "com BA":
                 ss.ba_num = st.text_input("Nº do BA", value=ss.ba_num)
             else:
@@ -324,35 +345,59 @@ def render():
 
             # Cabeçalho (pág.1)
             insert_right_of(page1, ["Cliente"], ss.cliente, dx=8, dy=1)
-            insert_right_of(page1, ["Número do Bilhete","Numero do Bilhete"], ss.numero_chamado, dx=8, dy=1)
-            insert_right_of(page1, ["Designação do Circuito","Designacao do Circuito"], ss.numero_chamado, dx=8, dy=1)
-            insert_right_of(page1, ["Horário Término","Horario Termino","Horário termino"], ss.hora_termino.strftime("%H:%M"), dx=8, dy=1)
+            insert_right_of(page1, ["Número do Bilhete", "Numero do Bilhete"], ss.numero_chamado, dx=8, dy=1)
+            insert_right_of(page1, ["Designação do Circuito", "Designacao do Circuito"], ss.numero_chamado, dx=8, dy=1)
+
+            # ✅ ADICIONADO: Horário Início no PDF
+            insert_right_of(
+                page1,
+                ["Horário Início", "Horario Inicio", "Horário inicio"],
+                ss.hora_inicio.strftime("%H:%M"),
+                dx=8, dy=1
+            )
+
+            # Horário término (já existia)
+            insert_right_of(
+                page1,
+                ["Horário Término", "Horario Termino", "Horário termino"],
+                ss.hora_termino.strftime("%H:%M"),
+                dx=8, dy=1
+            )
 
             # Endereço Ponta A + Nº
-            insert_right_of(page1, ["Endereço ponta A","Endereço Ponta A"], ss.endereco_ponta_a, dx=8, dy=1)
+            insert_right_of(page1, ["Endereço ponta A", "Endereço Ponta A"], ss.endereco_ponta_a, dx=8, dy=1)
             num_label_rect = None
-            no_rects = _all_hits(page1, ["N°","Nº","N o","N °"])
-            base_rect = _first_hit(page1, ["Endereço ponta A","Endereço Ponta A"])
+            no_rects = _all_hits(page1, ["N°", "Nº", "N o", "N °"])
+            base_rect = _first_hit(page1, ["Endereço ponta A", "Endereço Ponta A"])
             if no_rects and base_rect:
-                same_line=[r for r in no_rects if abs((r.y0+r.height/2)-(base_rect.y0+base_rect.height/2))<12]
+                same_line = [
+                    r for r in no_rects
+                    if abs((r.y0 + r.height / 2) - (base_rect.y0 + base_rect.height / 2)) < 12
+                ]
                 target_no = same_line[0] if same_line else no_rects[0]
                 num_label_rect = target_no  # guardamos para alinhar o telefone do validador
                 x = target_no.x1 + 6
-                y = target_no.y0 + target_no.height/1.5 + 1
-                page1.insert_text((x,y), ss.numero_ponta_a or "", fontsize=10)
+                y = target_no.y0 + target_no.height / 1.5 + 1
+                page1.insert_text((x, y), ss.numero_ponta_a or "", fontsize=10)
 
             # Responsável local + Telefone (âncora ou fallback forçado)
-            resp_lbl = _first_hit(page1, ["Responsável local","RESPONSÁVEL LOCAL","Responsavel local","Responsável","Responsavel"])
-            tel_resp_lbl = _first_hit(page1, ["Telefone do responsável","Telefone do Responsável","Tel. Responsável","Telefone Resp."])
+            resp_lbl = _first_hit(page1, ["Responsável local", "RESPONSÁVEL LOCAL", "Responsavel local", "Responsável", "Responsavel"])
+            tel_resp_lbl = _first_hit(page1, ["Telefone do responsável", "Telefone do Responsável", "Tel. Responsável", "Telefone Resp."])
             if resp_lbl:
-                insert_right_of(page1, ["Responsável local","RESPONSÁVEL LOCAL","Responsavel local","Responsável","Responsavel"],
-                                ss.responsavel_local, dx=8, dy=1)
+                insert_right_of(
+                    page1,
+                    ["Responsável local", "RESPONSÁVEL LOCAL", "Responsavel local", "Responsável", "Responsavel"],
+                    ss.responsavel_local, dx=8, dy=1
+                )
                 if tel_resp_lbl:
-                    insert_right_of(page1, ["Telefone do responsável","Telefone do Responsável","Tel. Responsável","Telefone Resp."],
-                                    ss.responsavel_tel, dx=8, dy=1)
+                    insert_right_of(
+                        page1,
+                        ["Telefone do responsável", "Telefone do Responsável", "Tel. Responsável", "Telefone Resp."],
+                        ss.responsavel_tel, dx=8, dy=1
+                    )
                 elif base_rect:
                     # sem âncora de telefone → imprime na linha do responsável, após o nome
-                    y = resp_lbl.y0 + resp_lbl.height/1.5 + 1
+                    y = resp_lbl.y0 + resp_lbl.height / 1.5 + 1
                     page1.insert_text((resp_lbl.x1 + 265, y), f"{ss.responsavel_tel or ''}", fontsize=10)
             elif base_rect:
                 # fallback: imprime uma linha acima do endereço
@@ -361,36 +406,45 @@ def render():
                 page1.insert_text((base_rect.x0 + 320, y), f"{ss.responsavel_tel or ''}", fontsize=10)
 
             # Serviços (pág.1)
-            if ss.svc_instalacao:      mark_X_left_of(page1, "Instalação", dx=-16, dy=0)
-            if ss.svc_retirada:        mark_X_left_of(page1, "Retirada", dx=-16, dy=0)
-            if ss.svc_vistoria:        mark_X_left_of(page1, "Vistoria Técnica", dx=-16, dy=0) or mark_X_left_of(page1, "Vistoria Tecnica", dx=-16, dy=0)
-            if ss.svc_alteracao:       mark_X_left_of(page1, "Alteração Técnica", dx=-16, dy=0) or mark_X_left_of(page1, "Alteração Tecnica", dx=-16, dy=0)
-            if ss.svc_mudanca:         mark_X_left_of(page1, "Mudança de Endereço", dx=-16, dy=0) or mark_X_left_of(page1, "Mudanca de Endereco", dx=-16, dy=0)
-            if ss.svc_teste_conjunto:  mark_X_left_of(page1, "Teste em conjunto", dx=-16, dy=0)
-            if ss.svc_servico_interno: mark_X_left_of(page1, "Serviço interno", dx=-16, dy=0) or mark_X_left_of(page1, "Servico interno", dx=-16, dy=0)
+            if ss.svc_instalacao:
+                mark_X_left_of(page1, "Instalação", dx=-16, dy=0)
+            if ss.svc_retirada:
+                mark_X_left_of(page1, "Retirada", dx=-16, dy=0)
+            if ss.svc_vistoria:
+                mark_X_left_of(page1, "Vistoria Técnica", dx=-16, dy=0) or mark_X_left_of(page1, "Vistoria Tecnica", dx=-16, dy=0)
+            if ss.svc_alteracao:
+                mark_X_left_of(page1, "Alteração Técnica", dx=-16, dy=0) or mark_X_left_of(page1, "Alteração Tecnica", dx=-16, dy=0)
+            if ss.svc_mudanca:
+                mark_X_left_of(page1, "Mudança de Endereço", dx=-16, dy=0) or mark_X_left_of(page1, "Mudanca de Endereco", dx=-16, dy=0)
+            if ss.svc_teste_conjunto:
+                mark_X_left_of(page1, "Teste em conjunto", dx=-16, dy=0)
+            if ss.svc_servico_interno:
+                mark_X_left_of(page1, "Serviço interno", dx=-16, dy=0) or mark_X_left_of(page1, "Servico interno", dx=-16, dy=0)
 
             # Identificação – Aceite (pág.1)
-            wan_label = _first_hit(page1, ["Teste de conectividade WAN","Teste final com equipamento do cliente"])
+            wan_label = _first_hit(page1, ["Teste de conectividade WAN", "Teste final com equipamento do cliente"])
             if wan_label:
-                pos_S  = wan_label.x1 + 138
-                pos_N  = wan_label.x1 + 165
+                pos_S = wan_label.x1 + 138
+                pos_N = wan_label.x1 + 165
                 pos_NA = wan_label.x1 + 207
-                ymark  = wan_label.y0 + 11
-                page1.insert_text((pos_S if ss.teste_wan=="S" else pos_N if ss.teste_wan=="N" else pos_NA, ymark), "X", fontsize=12)
+                ymark = wan_label.y0 + 11
+                page1.insert_text((pos_S if ss.teste_wan == "S" else pos_N if ss.teste_wan == "N" else pos_NA, ymark), "X", fontsize=12)
 
-            insert_right_of(page1, ["Técnico","Tecnico"], ss.tecnico_nome, dx=8, dy=1)
-            insert_right_of(page1, ["Cliente Ciente","Cliente  Ciente","Cliente Validador"], ss.cliente_validador_nome, dx=8, dy=1)
+            insert_right_of(page1, ["Técnico", "Tecnico"], ss.tecnico_nome, dx=8, dy=1)
+            insert_right_of(page1, ["Cliente Ciente", "Cliente  Ciente", "Cliente Validador"], ss.cliente_validador_nome, dx=8, dy=1)
 
             # Assinaturas
-            sig_slots = _all_hits(page1, ["Assinatura","ASSINATURA"])
+            sig_slots = _all_hits(page1, ["Assinatura", "ASSINATURA"])
             sig_slots = sorted(sig_slots, key=lambda r: (r.y0, r.x0))
-            tech_slot = sig_slots[0] if len(sig_slots)>=1 else None
-            cli_slot  = sig_slots[1] if len(sig_slots)>=2 else None
+            tech_slot = sig_slots[0] if len(sig_slots) >= 1 else None
+            cli_slot = sig_slots[1] if len(sig_slots) >= 2 else None
 
-            tech_x=None
+            tech_x = None
             if tech_slot and ss.sig_tec_png:
-                rect = fitz.Rect(tech_slot.x0 + 40, tech_slot.y0 - 15,
-                                 tech_slot.x0 + 40 + 200, tech_slot.y0 + 20)
+                rect = fitz.Rect(
+                    tech_slot.x0 + 40, tech_slot.y0 - 15,
+                    tech_slot.x0 + 40 + 200, tech_slot.y0 + 20
+                )
                 tech_x = rect.x0
                 page1.insert_image(rect, stream=ss.sig_tec_png, keep_proportion=True)
 
@@ -402,53 +456,65 @@ def render():
             # Contato do validador: MESMO X do rótulo "Nº (Ponta A)" e MESMO Y da linha da assinatura do cliente
             if cli_slot and (ss.validador_tel or "").strip() and num_label_rect is not None:
                 x = num_label_rect.x0  # “mesmo X” do label Nº
-                y = cli_slot.y0 + cli_slot.height/1.5 + 55 # “mesmo Y” da linha de assinatura do cliente
+                y = cli_slot.y0 + cli_slot.height / 1.5 + 55  # “mesmo Y” da linha de assinatura do cliente
                 page1.insert_text((x, y), f"{ss.validador_tel.strip()}", fontsize=10)
 
-            # Data / Horário (auto fuso do navegador)
+            # Data / Horário (data/hora do preenchimento da RAT, fuso do navegador)
             if ss.usar_agora:
                 tzname = (ss.browser_tz.strip() or DEFAULT_TZ)
-                try: tz = ZoneInfo(tzname)
-                except Exception: tz = ZoneInfo(DEFAULT_TZ)
+                try:
+                    tz = ZoneInfo(tzname)
+                except Exception:
+                    tz = ZoneInfo(DEFAULT_TZ)
                 now = datetime.now(tz=tz)
                 insert_right_of(page1, ["Data"], now.strftime("%d/%m/%Y"), dx=8, dy=1)
-                insert_right_of(page1, ["Horario","Horário"], now.strftime("%H:%M"), dx=8, dy=1)
+                insert_right_of(page1, ["Horario", "Horário"], now.strftime("%H:%M"), dx=8, dy=1)
 
-            insert_right_of(page1, ["Aceitação do serviço pelo responsável","Aceitacao do servico pelo responsavel"],
-                            ss.aceitacao_resp, dx=8, dy=1)
+            insert_right_of(
+                page1,
+                ["Aceitação do serviço pelo responsável", "Aceitacao do servico pelo responsavel"],
+                ss.aceitacao_resp, dx=8, dy=1
+            )
 
             # ===== Página 2 =====
             page2 = doc[1] if doc.page_count >= 2 else doc.new_page()
 
             # Equipamentos (colunas)
-            eq_title = _first_hit(page2, ["EQUIPAMENTOS NO CLIENTE","Equipamentos no Cliente"])
+            eq_title = _first_hit(page2, ["EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente"])
             if eq_title:
-                col_tipo   = _first_hit(page2, ["Tipo"])
-                col_sn     = _first_hit(page2, ["Nº de Serie","N° de Serie","Nº de Série","No de Serie","N de Serie"])
-                col_modelo = _first_hit(page2, ["Modelo","Fabricante"])
+                col_tipo = _first_hit(page2, ["Tipo"])
+                col_sn = _first_hit(page2, ["Nº de Serie", "N° de Serie", "Nº de Série", "No de Serie", "N de Serie"])
+                col_modelo = _first_hit(page2, ["Modelo", "Fabricante"])
                 col_status = _first_hit(page2, ["Status"])
 
                 base_x = eq_title.x0
-                col_tipo_x   = (col_tipo.x0   if col_tipo   else base_x +  10)
-                col_sn_x     = (col_sn.x0     if col_sn     else base_x + 180)
+                col_tipo_x = (col_tipo.x0 if col_tipo else base_x + 10)
+                col_sn_x = (col_sn.x0 if col_sn else base_x + 180)
                 col_modelo_x = (col_modelo.x0 if col_modelo else base_x + 320)
                 col_status_x = (col_status.x0 if col_status else base_x + 470)
 
-                DY=2; TOP=36; ROW=26; FS=10
-                for i,it in enumerate(ss.equip_cli):
-                    y = eq_title.y1 + TOP + i*ROW
-                    if it.get("tipo"):          page2.insert_text((col_tipo_x,   y+DY), str(it["tipo"]), fontsize=FS)
-                    if it.get("numero_serie"):  page2.insert_text((col_sn_x,     y+DY), str(it["numero_serie"]), fontsize=FS)
-                    if it.get("modelo"):        page2.insert_text((col_modelo_x, y+DY), str(it["modelo"]), fontsize=FS)
-                    if it.get("status"):        page2.insert_text((col_status_x, y+DY), str(it["status"]), fontsize=FS)
+                DY = 2
+                TOP = 36
+                ROW = 26
+                FS = 10
+                for i, it in enumerate(ss.equip_cli):
+                    y = eq_title.y1 + TOP + i * ROW
+                    if it.get("tipo"):
+                        page2.insert_text((col_tipo_x, y + DY), str(it["tipo"]), fontsize=FS)
+                    if it.get("numero_serie"):
+                        page2.insert_text((col_sn_x, y + DY), str(it["numero_serie"]), fontsize=FS)
+                    if it.get("modelo"):
+                        page2.insert_text((col_modelo_x, y + DY), str(it["modelo"]), fontsize=FS)
+                    if it.get("status"):
+                        page2.insert_text((col_status_x, y + DY), str(it["status"]), fontsize=FS)
 
             # Produtividade → textos (pág.2)
-            obs_lines=[]
+            obs_lines = []
             if ss.produtivo:
                 linha = f"Produtivo: {ss.produtivo}"
                 if ss.produtivo == "produtivo parcial" and ss.prod_parcial_tipo:
                     linha += f" - {ss.prod_parcial_tipo}"
-                    if ss.prod_parcial_tipo=="com BA" and (ss.ba_num or "").strip():
+                    if ss.prod_parcial_tipo == "com BA" and (ss.ba_num or "").strip():
                         linha += f" - BA {ss.ba_num.strip()}"
                 if (ss.suporte_mam or "").strip():
                     linha += f" - acompanhado pelo analista {ss.suporte_mam}"
@@ -456,34 +522,51 @@ def render():
                     linha += " - acompanhado pelo analista"
                 obs_lines.append(linha)
 
-            acao_extra=""; problema_extra=""
+            acao_extra = ""
+            problema_extra = ""
             if ss.produtivo == "produtivo parcial":
-                if ss.prod_parcial_tipo=="com BA" and (ss.ba_num or "").strip():
+                if ss.prod_parcial_tipo == "com BA" and (ss.ba_num or "").strip():
                     acao_extra = f"BA: {ss.ba_num.strip()}"
             elif ss.produtivo == "não-improdutivo":
                 if (ss.motivo_improdutivo or "").strip():
                     problema_extra = ss.motivo_improdutivo.strip()
 
             if problema_extra:
-                insert_textbox(page2, ["PROBLEMA ENCONTRADO","Problema Encontrado"], problema_extra,
-                               width=540, y_offset=20, height=120, fontsize=10)
+                insert_textbox(
+                    page2,
+                    ["PROBLEMA ENCONTRADO", "Problema Encontrado"],
+                    problema_extra,
+                    width=540, y_offset=20, height=120, fontsize=10
+                )
 
             if acao_extra:
-                insert_textbox(page2, ["AÇÃO CORRETIVA","Acao Corretiva","Ação Corretiva"], acao_extra,
-                               width=540, y_offset=20, height=100, fontsize=10)
+                insert_textbox(
+                    page2,
+                    ["AÇÃO CORRETIVA", "Acao Corretiva", "Ação Corretiva"],
+                    acao_extra,
+                    width=540, y_offset=20, height=100, fontsize=10
+                )
 
             obs_final = "\n".join([t for t in [("\n".join(obs_lines)).strip(), (ss.observacoes or "").strip()] if t])
             if obs_final:
-                insert_textbox(page2, ["OBSERVAÇÕES","Observacoes","Observações"], obs_final,
-                               width=540, y_offset=20, height=160, fontsize=10)
+                insert_textbox(
+                    page2,
+                    ["OBSERVAÇÕES", "Observacoes", "Observações"],
+                    obs_final,
+                    width=540, y_offset=20, height=160, fontsize=10
+                )
 
             # ===== Blindagem + fotos =====
             _insert_blind_fields_and_cover_with_gateway(doc, ss)  # última página com fields ocultos + 1ª foto
             if len(ss.fotos_gateway) > 1:
                 for b in ss.fotos_gateway[1:]:
-                    if b: add_image_page(doc, b)
+                    if b:
+                        add_image_page(doc, b)
 
-            out=BytesIO(); doc.save(out); doc.close()
+            out = BytesIO()
+            doc.save(out)
+            doc.close()
+
             st.success("PDF (OI CPE) gerado!")
             st.download_button(
                 "⬇️ Baixar RAT OI CPE",
