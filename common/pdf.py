@@ -1,136 +1,51 @@
-# common/pdf.py — utilitários PyMuPDF (fitz) para preencher PDFs
-
 from io import BytesIO
-import os
-import glob
+import os, glob
 import fitz
 import streamlit as st
 
-# Pillow é opcional, mas suportado
 try:
     from PIL import Image
 except Exception:
     Image = None
 
 
-# =========================================================
-# 🔖 SELO DE GERAÇÃO (imagem + texto)
-# =========================================================
-def add_generation_stamp(
-    page: fitz.Page,
-    image_path: str,
-    text: str,
-    where: str = "bottom_right",
-    scale: float = 0.55,
-    opacity: float = 0.85,
-):
-    """
-    Adiciona um selo de geração automática no PDF (imagem + texto).
-
-    text exemplo:
-    "Gerado automaticamente\n07/01/2026 14:32 • Chamado 123456789"
-    """
-
+def add_generation_stamp(page, image_path, text, where="bottom_right", scale=0.55, opacity=0.85):
     r = page.rect
     margin_x, margin_y = 18, 16
 
-    # ---------- fallback: só texto ----------
     if not image_path or not os.path.exists(image_path):
-        rect_txt = fitz.Rect(
-            r.width - 240,
-            r.height - 70,
-            r.width - 18,
-            r.height - 18,
-        )
-        page.insert_textbox(
-            rect_txt,
-            text,
-            fontsize=7.2,
-            fontname="helv",
-            align=fitz.TEXT_ALIGN_LEFT,
-            color=(0.45, 0.45, 0.45),
-        )
+        rect_txt = fitz.Rect(r.width - 240, r.height - 70, r.width - 18, r.height - 18)
+        page.insert_textbox(rect_txt, text, fontsize=7.2, fontname="helv",
+                            align=fitz.TEXT_ALIGN_LEFT, color=(0.45, 0.45, 0.45))
         return
 
-    # ---------- imagem ----------
     pix = fitz.Pixmap(image_path)
     img_w, img_h = pix.width * scale, pix.height * scale
 
     if where == "bottom_right":
-        rect_img = fitz.Rect(
-            r.width - img_w - margin_x,
-            r.height - img_h - margin_y,
-            r.width - margin_x,
-            r.height - margin_y,
-        )
+        rect_img = fitz.Rect(r.width - img_w - margin_x, r.height - img_h - margin_y, r.width - margin_x, r.height - margin_y)
     elif where == "bottom_left":
-        rect_img = fitz.Rect(
-            margin_x,
-            r.height - img_h - margin_y,
-            margin_x + img_w,
-            r.height - margin_y,
-        )
+        rect_img = fitz.Rect(margin_x, r.height - img_h - margin_y, margin_x + img_w, r.height - margin_y)
     elif where == "top_right":
-        rect_img = fitz.Rect(
-            r.width - img_w - margin_x,
-            margin_y,
-            r.width - margin_x,
-            margin_y + img_h,
-        )
-    else:  # top_left
-        rect_img = fitz.Rect(
-            margin_x,
-            margin_y,
-            margin_x + img_w,
-            margin_y + img_h,
-        )
+        rect_img = fitz.Rect(r.width - img_w - margin_x, margin_y, r.width - margin_x, margin_y + img_h)
+    else:
+        rect_img = fitz.Rect(margin_x, margin_y, margin_x + img_w, margin_y + img_h)
 
-    page.insert_image(
-        rect_img,
-        filename=image_path,
-        keep_proportion=True,
-        overlay=True,
-        opacity=opacity,
-    )
+    page.insert_image(rect_img, filename=image_path, keep_proportion=True, overlay=True, opacity=opacity)
 
-    # ---------- texto ----------
-    gap = 6
-    txt_height = 34
-
-    rect_txt = fitz.Rect(
-        rect_img.x0,
-        rect_img.y1 + gap,
-        rect_img.x1,
-        rect_img.y1 + gap + txt_height,
-    )
-
-    # se estourar o rodapé, joga o texto para cima da imagem
+    gap, txt_height = 6, 34
+    rect_txt = fitz.Rect(rect_img.x0, rect_img.y1 + gap, rect_img.x1, rect_img.y1 + gap + txt_height)
     if rect_txt.y1 > r.height - 6:
-        rect_txt = fitz.Rect(
-            rect_img.x0,
-            rect_img.y0 - gap - txt_height,
-            rect_img.x1,
-            rect_img.y0 - gap,
-        )
+        rect_txt = fitz.Rect(rect_img.x0, rect_img.y0 - gap - txt_height, rect_img.x1, rect_img.y0 - gap)
 
-    page.insert_textbox(
-        rect_txt,
-        text,
-        fontsize=7.2,
-        fontname="helv",
-        align=fitz.TEXT_ALIGN_LEFT,
-        color=(0.45, 0.45, 0.45),
-    )
+    page.insert_textbox(rect_txt, text, fontsize=7.2, fontname="helv",
+                        align=fitz.TEXT_ALIGN_LEFT, color=(0.45, 0.45, 0.45))
 
 
-# =========================================================
-# 📄 TEMPLATE PDF
-# =========================================================
 def _find_template_by_hint(hint: str, base_dir: str) -> str | None:
     pat = os.path.join(base_dir, "*.pdf")
     for path in glob.glob(pat):
-        name = os.path.basename(path)
-        if name.lower().startswith(hint.lower()):
+        if os.path.basename(path).lower().startswith(hint.lower()):
             return path
     return None
 
@@ -159,9 +74,6 @@ def open_pdf_template(path: str, hint: str | None = None):
         raise
 
 
-# =========================================================
-# 🔎 BUSCAS E INSERÇÕES
-# =========================================================
 def search_once(page, texts, occurrence=1):
     if isinstance(texts, str):
         texts = [texts]
@@ -204,30 +116,10 @@ def mark_X_left_of(page, label_text, dx=-14, dy=0, occurrence=1, fontsize=12):
     page.insert_text((x, y), "X", fontsize=fontsize)
 
 
-# =========================================================
-# ✍️ ASSINATURA
-# =========================================================
-def insert_signature_png(page, labels, sig_png_bytes, rel_rect, occurrence=1):
-    if not sig_png_bytes:
-        return
-    r = search_once(page, labels, occurrence)
-    if not r:
-        return
-    rect = fitz.Rect(
-        r.x0 + rel_rect[0], r.y1 + rel_rect[1],
-        r.x0 + rel_rect[2], r.y1 + rel_rect[3],
-    )
-    page.insert_image(rect, stream=sig_png_bytes, keep_proportion=True)
-
-
-# =========================================================
-# 🖼️ IMAGEM EM NOVA PÁGINA
-# =========================================================
 def add_image_page(doc, img_bytes, margin=36):
     if not img_bytes:
         return
 
-    # fallback sem Pillow
     if Image is None:
         page = doc.new_page()
         page.insert_image(page.rect, stream=img_bytes, keep_proportion=True)
