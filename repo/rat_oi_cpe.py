@@ -25,6 +25,20 @@ from common.pdf import (
     open_pdf_template, insert_right_of, insert_textbox, mark_X_left_of,
     add_image_page
 )
+from common.pdf import (
+    open_pdf_template, insert_right_of, insert_textbox, mark_X_left_of,
+    add_image_page,
+)
+try:
+    from common.pdf import add_generation_stamp
+except Exception:
+    add_generation_stamp = None
+def _resolve_stamp_path(project_root: str) -> str:
+    p = os.path.join(project_root, "assets", "selo_evernex_maminfo.png")
+    return p if os.path.exists(p) else ""
+
+SELO_IMG = _resolve_stamp_path(PROJECT_ROOT)
+
 
 PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
 PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_OI_CPE_NOVO.pdf")
