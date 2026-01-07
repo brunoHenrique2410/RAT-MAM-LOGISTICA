@@ -494,7 +494,7 @@ def render():
                 r_hora_bottom = _pick_hit_bottom(page1, ["Horario", "Horário"])
 
                 # Se por algum motivo achar "Data" do topo, tente pegar o mais embaixo mesmo.
-                _write_right_of_rect(page1, r_data_bottom, data_txt, dx=6, dy=3, fontsize=8)
+                _write_right_of_rect(page1, r_data_bottom, data_txt, dx=6, dy=3, fontsize=10)
                 _write_right_of_rect(page1, r_hora_bottom, hora_txt, dx=6, dy=1, fontsize=9)
 
             insert_right_of(page1, ["Aceitação do serviço pelo responsável", "Aceitacao do servico pelo responsavel"],
