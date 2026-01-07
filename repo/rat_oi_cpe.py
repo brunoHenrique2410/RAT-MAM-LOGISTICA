@@ -26,6 +26,7 @@ from common.pdf import (
     add_image_page
 )
 
+SELO_IMG = os.path.join(PROJECT_ROOT, "assets", "selo_evernex_maminfo.png")
 PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
 PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_OI_CPE_NOVO.pdf")
 DEFAULT_TZ = "America/Sao_Paulo"
@@ -572,6 +573,20 @@ def render():
                 for b in ss.fotos_gateway[1:]:
                     if b:
                         add_image_page(doc, b)
+
+                stamp_text = (
+                "Gerado automaticamente\n"
+                f"{now.strftime('%d/%m/%Y %H:%M')} • Chamado {ss.numero_chamado or '-'}"
+                    )
+
+                    add_generation_stamp(
+                    page1,
+                    SELO_IMG,
+                    stamp_text,
+                    where="bottom_right",  # pode trocar p/ top_right se quiser
+                    scale=0.55,
+                    opacity=0.85
+                )
 
             out = BytesIO()
             doc.save(out)
