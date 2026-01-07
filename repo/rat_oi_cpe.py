@@ -478,9 +478,9 @@ def render():
                 y = cli_slot.y0 + cli_slot.height / 1.5 + 55
                 page1.insert_text((x, y), f"{ss.validador_tel.strip()}", fontsize=10)
 
-                    # Data / Horário (última linha)
-                if ss.usar_agora:
-                    tzname = (ss.browser_tz.strip() or DEFAULT_TZ)
+            # Data / Horário (última linha)
+            if ss.usar_agora:
+                tzname = (ss.browser_tz.strip() or DEFAULT_TZ)
                 try:
                     tz = ZoneInfo(tzname)
                 except Exception:
@@ -488,12 +488,12 @@ def render():
 
                 now = datetime.now(tz=tz)
     
-                    # ✅ DATA ESPAÇADA
+                # ✅ DATA ESPAÇADA
                 data_txt = f"{now.strftime('%d')}  {now.strftime('%m')}   {now.strftime('%Y')}"
                 hora_txt = now.strftime("%H:%M")
 
-            r_data_bottom = _pick_hit_bottom(page1, ["Data"])
-            r_hora_bottom = _pick_hit_bottom(page1, ["Horario", "Horário"])
+                r_data_bottom = _pick_hit_bottom(page1, ["Data"])
+                r_hora_bottom = _pick_hit_bottom(page1, ["Horario", "Horário"])
 
                 _write_right_of_rect(page1, r_data_bottom, data_txt, dx=6, dy=3, fontsize=8)
                 _write_right_of_rect(page1, r_hora_bottom, hora_txt, dx=6, dy=1, fontsize=9)
