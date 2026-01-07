@@ -46,6 +46,7 @@ DEFAULT_TZ = "America/Sao_Paulo"
 
 
 # ---------- helpers ----------
+
 def _cm_to_pt(cm: float) -> float:
     return cm * 28.3464567
 
@@ -225,7 +226,20 @@ def _insert_blind_fields_and_cover_with_gateway(doc: fitz.Document, ss):
             page.insert_image(rect, stream=img_bytes, keep_proportion=True)
         except Exception:
             pass
-
+            
+            if add_generation_stamp:
+                stamp_text = (
+                    "Gerado automaticamente\n"
+                     f"{now.strftime('%d/%m/%Y %H:%M')} • Chamado {ss.numero_chamado or '-'}"
+                )
+                add_generation_stamp(
+                    page1,
+                    SELO_IMG,      # se estiver vazio, a função deve cair no texto apenas
+                    stamp_text,
+                    where="bottom_right",
+                    scale=0.55,
+                    opacity=0.85
+                )
 
 # ===================== UI + geração =====================
 def render():
@@ -589,19 +603,7 @@ def render():
                     if b:
                         add_image_page(doc, b)
                         
-            if add_generation_stamp:
-                stamp_text = (
-                    "Gerado automaticamente\n"
-                     f"{now.strftime('%d/%m/%Y %H:%M')} • Chamado {ss.numero_chamado or '-'}"
-                )
-                add_generation_stamp(
-                    page1,
-                    SELO_IMG,      # se estiver vazio, a função deve cair no texto apenas
-                    stamp_text,
-                    where="bottom_right",
-                    scale=0.55,
-                    opacity=0.85
-                )
+
 
             out = BytesIO()
             doc.save(out)
