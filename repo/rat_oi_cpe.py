@@ -588,20 +588,20 @@ def render():
                 for b in ss.fotos_gateway[1:]:
                     if b:
                         add_image_page(doc, b)
+                        
             if add_generation_stamp:
-                
-            stamp_text = (
-                "Gerado automaticamente\n"
-                f"{now.strftime('%d/%m/%Y %H:%M')} • Chamado {ss.numero_chamado or '-'}"
-            )
-            add_generation_stamp(
-                page1,
-                SELO_IMG,      # se estiver vazio, a função deve cair no texto apenas
-                stamp_text,
-                where="bottom_right",
-                scale=0.55,
-                opacity=0.85
-            )
+                stamp_text = (
+                    "Gerado automaticamente\n"
+                     f"{now.strftime('%d/%m/%Y %H:%M')} • Chamado {ss.numero_chamado or '-'}"
+                )
+                add_generation_stamp(
+                    page1,
+                    SELO_IMG,      # se estiver vazio, a função deve cair no texto apenas
+                    stamp_text,
+                    where="bottom_right",
+                    scale=0.55,
+                    opacity=0.85
+                )
 
             out = BytesIO()
             doc.save(out)
