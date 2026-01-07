@@ -1,5 +1,5 @@
 # repo/rat_oi_cpe.py — RAT OI CPE NOVO
-# ✅ Inclui selo (imagem + texto dinâmico) em toda geração
+# ✅ Inclui selo (imagem + texto dinâmico) em toda geração (com fallback se PNG não existir)
 # ✅ Horário início / término
 # ✅ Data/Horário do preenchimento usando fuso do browser
 
@@ -30,8 +30,21 @@ PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
 PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_OI_CPE_NOVO.pdf")
 DEFAULT_TZ = "America/Sao_Paulo"
 
-# ✅ caminho do seu PNG (assets/selo_evernex_maminfo.png)
-SELO_IMG = os.path.join(PROJECT_ROOT, "assets", "selo_evernex_maminfo.png")
+# ✅ resolve do caminho do selo (não quebra no cloud se o arquivo não existir)
+def _resolve_stamp_path(project_root: str) -> str:
+    candidates = [
+        os.path.join(project_root, "assets", "selo_evernex_maminfo.png"),
+        os.path.join(project_root, "assets", "selo_evernex_maminfo.PNG"),
+        os.path.join(project_root, "assets", "selo.png"),
+        os.path.join(project_root, "assets", "stamp.png"),
+        os.path.join(project_root, "assets", "carimbo.png"),
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    return ""  # vazio => add_generation_stamp cai no fallback (texto)
+
+SELO_IMG = _resolve_stamp_path(PROJECT_ROOT)
 
 
 # ---------- helpers ----------
@@ -425,29 +438,6 @@ def render():
             insert_right_of(page1, ["Técnico", "Tecnico"], ss.tecnico_nome, dx=8, dy=1)
             insert_right_of(page1, ["Cliente Ciente", "Cliente  Ciente", "Cliente Validador"], ss.cliente_validador_nome, dx=8, dy=1)
 
-            # Assinaturas
-            sig_slots = _all_hits(page1, ["Assinatura", "ASSINATURA"])
-            sig_slots = sorted(sig_slots, key=lambda r: (r.y0, r.x0))
-            tech_slot = sig_slots[0] if len(sig_slots) >= 1 else None
-            cli_slot = sig_slots[1] if len(sig_slots) >= 2 else None
-
-            tech_x = None
-            if tech_slot and ss.sig_tec_png:
-                rect = fitz.Rect(tech_slot.x0 + 40, tech_slot.y0 - 15, tech_slot.x0 + 40 + 200, tech_slot.y0 + 20)
-                tech_x = rect.x0
-                page1.insert_image(rect, stream=ss.sig_tec_png, keep_proportion=True)
-
-            if cli_slot and ss.sig_cli_png:
-                base_x = tech_x if tech_x is not None else (cli_slot.x0 + 40)
-                rect = fitz.Rect(base_x, cli_slot.y0 - 10, base_x + 200, cli_slot.y0 + 145)
-                page1.insert_image(rect, stream=ss.sig_cli_png, keep_proportion=True)
-
-            # Contato do validador (opcional)
-            if cli_slot and (ss.validador_tel or "").strip() and num_label_rect is not None:
-                x = num_label_rect.x0
-                y = cli_slot.y0 + cli_slot.height / 1.5 + 55
-                page1.insert_text((x, y), f"{ss.validador_tel.strip()}", fontsize=10)
-
             # Data / Horário (última linha) + now (para selo)
             now = None
             if ss.usar_agora:
@@ -459,7 +449,6 @@ def render():
 
                 now = datetime.now(tz=tz)
 
-                # (se você mexeu no template e já “abriu espaço” na data, pode manter assim)
                 data_txt = now.strftime("%d/%m/%Y")
                 hora_txt = now.strftime("%H:%M")
 
@@ -477,7 +466,6 @@ def render():
             )
 
             # ✅ SELO (sempre que gerar)
-            # usa 'now' se já foi calculado; senão cria agora no fuso default
             if now is None:
                 now = datetime.now(ZoneInfo(DEFAULT_TZ))
 
@@ -487,100 +475,14 @@ def render():
             )
             add_generation_stamp(
                 page1,
-                SELO_IMG,
+                SELO_IMG,  # se vazio/inexistente => fallback só texto (na função)
                 stamp_text,
                 where="bottom_right",
                 scale=0.55,
                 opacity=0.85
             )
 
-            # ===== Página 2 =====
-            page2 = doc[1] if doc.page_count >= 2 else doc.new_page()
-
-            # Equipamentos (colunas)
-            eq_title = _first_hit(page2, ["EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente"])
-            if eq_title:
-                col_tipo = _first_hit(page2, ["Tipo"])
-                col_sn = _first_hit(page2, ["Nº de Serie", "N° de Serie", "Nº de Série", "No de Serie", "N de Serie"])
-                col_modelo = _first_hit(page2, ["Modelo", "Fabricante"])
-                col_status = _first_hit(page2, ["Status"])
-
-                base_x = eq_title.x0
-                col_tipo_x = (col_tipo.x0 if col_tipo else base_x + 10)
-                col_sn_x = (col_sn.x0 if col_sn else base_x + 180)
-                col_modelo_x = (col_modelo.x0 if col_modelo else base_x + 320)
-                col_status_x = (col_status.x0 if col_status else base_x + 470)
-
-                DY = 2
-                TOP = 36
-                ROW = 26
-                FS = 10
-                for i, it in enumerate(ss.equip_cli):
-                    y = eq_title.y1 + TOP + i * ROW
-                    if it.get("tipo"):
-                        page2.insert_text((col_tipo_x, y + DY), str(it["tipo"]), fontsize=FS)
-                    if it.get("numero_serie"):
-                        page2.insert_text((col_sn_x, y + DY), str(it["numero_serie"]), fontsize=FS)
-                    if it.get("modelo"):
-                        page2.insert_text((col_modelo_x, y + DY), str(it["modelo"]), fontsize=FS)
-                    if it.get("status"):
-                        page2.insert_text((col_status_x, y + DY), str(it["status"]), fontsize=FS)
-
-            # Produtividade → textos (pág.2)
-            obs_lines = []
-            if ss.produtivo:
-                linha = f"Produtivo: {ss.produtivo}"
-                if ss.produtivo == "produtivo parcial" and ss.prod_parcial_tipo:
-                    linha += f" - {ss.prod_parcial_tipo}"
-                    if ss.prod_parcial_tipo == "com BA" and (ss.ba_num or "").strip():
-                        linha += f" - BA {ss.ba_num.strip()}"
-                if (ss.suporte_mam or "").strip():
-                    linha += f" - acompanhado pelo analista {ss.suporte_mam}"
-                else:
-                    linha += " - acompanhado pelo analista"
-                obs_lines.append(linha)
-
-            acao_extra = ""
-            problema_extra = ""
-            if ss.produtivo == "produtivo parcial":
-                if ss.prod_parcial_tipo == "com BA" and (ss.ba_num or "").strip():
-                    acao_extra = f"BA: {ss.ba_num.strip()}"
-            elif ss.produtivo == "não-improdutivo":
-                if (ss.motivo_improdutivo or "").strip():
-                    problema_extra = ss.motivo_improdutivo.strip()
-
-            if problema_extra:
-                insert_textbox(
-                    page2,
-                    ["PROBLEMA ENCONTRADO", "Problema Encontrado"],
-                    problema_extra,
-                    width=540, y_offset=20, height=120, fontsize=10
-                )
-
-            if acao_extra:
-                insert_textbox(
-                    page2,
-                    ["AÇÃO CORRETIVA", "Acao Corretiva", "Ação Corretiva"],
-                    acao_extra,
-                    width=540, y_offset=20, height=100, fontsize=10
-                )
-
-            obs_final = "\n".join([t for t in [("\n".join(obs_lines)).strip(), (ss.observacoes or "").strip()] if t])
-            if obs_final:
-                insert_textbox(
-                    page2,
-                    ["OBSERVAÇÕES", "Observacoes", "Observações"],
-                    obs_final,
-                    width=540, y_offset=20, height=160, fontsize=10
-                )
-
-            # ===== Blindagem + fotos =====
-            _insert_blind_fields_and_cover_with_gateway(doc, ss)
-            if len(ss.fotos_gateway) > 1:
-                for b in ss.fotos_gateway[1:]:
-                    if b:
-                        add_image_page(doc, b)
-
+            # ----- salva -----
             out = BytesIO()
             doc.save(out)
             doc.close()
