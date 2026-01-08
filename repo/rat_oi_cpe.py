@@ -418,7 +418,7 @@ def render():
             hora_txt = now.strftime("%H:%M")
             r_data_bottom = _pick_hit_bottom(page1, ["Data"])
             r_hora_bottom = _pick_hit_bottom(page1, ["Horario", "Horário"])
-            _write_right_of_rect(page1, r_data_bottom, data_txt, dx=10, dy=1, fontsize=9)
+            _write_right_of_rect(page1, r_data_bottom, data_txt, dx=6, dy=1, fontsize=9)
             _write_right_of_rect(page1, r_hora_bottom, hora_txt, dx=6, dy=1, fontsize=9)
 
             # ===== Página 2 =====
@@ -437,15 +437,15 @@ def render():
             chamado = (ss.numero_chamado or "").strip() or "-"
             stamp_text = (
                 "Gerado automaticamente\n"
-                f"{now.strftime('%d/%m/%Y %H:%M')} • Chamado {chamado}"
+                f"{now.strftime('%d/%m/%Y %H:%M')} {chamado}"
             )
 
             r = page2.rect
 
             # caixa no canto inferior direito (ajuste fino aqui)
             rect_txt = fitz.Rect(
-                r.width - 260,   # mais pra esquerda = aumenta esse número?
-                r.height - 70,   # mais pra cima = aumenta esse número?
+                r.width - 230,   # mais pra esquerda = aumenta esse número
+                r.height - 50,   # mais pra cima = aumenta esse número
                 r.width - 18,
                 r.height - 18
             )
