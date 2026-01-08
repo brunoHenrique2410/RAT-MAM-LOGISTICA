@@ -37,11 +37,16 @@ PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
 PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_OI_CPE_NOVO.pdf")
 DEFAULT_TZ = "America/Sao_Paulo"
 
-def _resolve_stamp_path(project_root: str) -> str:
-    p = os.path.join(project_root, "assets", "selo_evernex_maminfo.png")
+def _resolve_stamp_path() -> str:
+    # procura a partir do arquivo atual (repo/rat_oi_cpe.py)
+    base = os.path.dirname(os.path.abspath(__file__))   # .../repo
+    root = os.path.dirname(base)                        # project root
+    p = os.path.join(root, "assets", "selo_evernex_maminfo.png")
     return p if os.path.exists(p) else ""
 
-SELO_IMG = _resolve_stamp_path(PROJECT_ROOT)
+SELO_IMG = _resolve_stamp_path()
+st.caption(f"DEBUG selo: {SELO_IMG} | exists={os.path.exists(SELO_IMG)}")
+
 
 # ---------- helpers ----------
 def _cm_to_pt(cm: float) -> float:
@@ -426,7 +431,7 @@ def render():
             # ✅ SELO na 2ª página (inferior direito)
             stamp_text = (
                 "Gerado automaticamente\n"
-                f"{now.strftime('%d/%m/%Y %H:%M')} • Chamado {ss.numero_chamado or '-'}"
+                f"{now.strftime('%d/%m/%Y %H:%M')}   Chamado {ss.numero_chamado or '-'}"
             )
 
             if add_generation_stamp:
