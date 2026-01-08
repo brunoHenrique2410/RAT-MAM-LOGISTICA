@@ -3,7 +3,11 @@
 # - Horário Início: UI + PDF
 # - Horário Término: deslocado ~1,5cm para direita
 # - Última linha "Data ... Horario: ...": fonte menor e data espaçada
-# - ✅ Selo: imagem + texto no canto inferior direito da PÁGINA 2 (robusto)
+# - ✅ Selo: IMAGEM + TEXTO no canto inferior direito da PÁGINA 2 (robusto)
+#
+# Obs:
+# - Remove bullet "•" (vira "?") e usa "|"
+# - Usa insert_stamp_image (foto normal) do common/pdf.py
 
 import os, sys
 from io import BytesIO
@@ -15,8 +19,8 @@ import streamlit.components.v1 as components
 import fitz  # PyMuPDF
 
 # ---------- PATHS ----------
-THIS_DIR = os.path.dirname(os.path.abspath(__file__))   # .../repo
-PROJECT_ROOT = os.path.dirname(THIS_DIR)                # project root
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(THIS_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
@@ -25,7 +29,7 @@ from common.ui import assinatura_dupla_png, foto_gateway_uploader
 from common.pdf import (
     open_pdf_template, insert_right_of, insert_textbox, mark_X_left_of,
     add_image_page,
-    insert_stamp_image,   # ✅ selo como “foto normal”
+    insert_stamp_image,   # ✅ selo como foto normal
 )
 
 PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
@@ -34,7 +38,9 @@ DEFAULT_TZ = "America/Sao_Paulo"
 
 
 def _resolve_stamp_path() -> str:
-    p = os.path.join(PROJECT_ROOT, "assets", "selo_evernex_maminfo.png")
+    base = os.path.dirname(os.path.abspath(__file__))  # .../repo
+    root = os.path.dirname(base)                       # project root
+    p = os.path.join(root, "assets", "selo_evernex_maminfo.png")
     return p if os.path.exists(p) else ""
 
 
@@ -163,6 +169,7 @@ def _insert_blind_fields_and_cover_with_gateway(doc: fitz.Document, ss):
     page = doc.new_page()
     fields = {}
 
+    # Cabeçalho
     fields["numero_chamado"] = (ss.numero_chamado or "").strip()
     fields["cliente"] = (ss.cliente or "").strip()
     fields["responsavel_local"] = (ss.responsavel_local or "").strip()
@@ -170,12 +177,14 @@ def _insert_blind_fields_and_cover_with_gateway(doc: fitz.Document, ss):
     fields["endereco_ponta_a"] = (ss.endereco_ponta_a or "").strip()
     fields["numero_ponta_a"] = (ss.numero_ponta_a or "").strip()
 
+    # Aceite
     fields["tecnico"] = (ss.tecnico_nome or "").strip()
     fields["cliente_validador"] = (ss.cliente_validador_nome or "").strip()
     fields["validador_tel"] = (ss.validador_tel or "").strip()
     fields["teste_final"] = (ss.teste_wan or "NA").upper().strip()
     fields["aceitacao_resp"] = (ss.aceitacao_resp or "").strip()
 
+    # Produtividade
     prod = (ss.produtivo or "").strip()
     fields["produtivo"] = prod
     fields["produtivo_parcial_tipo"] = (ss.prod_parcial_tipo or "").strip() if prod == "produtivo parcial" else ""
@@ -183,14 +192,17 @@ def _insert_blind_fields_and_cover_with_gateway(doc: fitz.Document, ss):
     fields["motivo_improdutivo"] = (ss.motivo_improdutivo or "").strip() if prod == "não-improdutivo" else ""
     fields["suporte_mam"] = (ss.suporte_mam or "").strip()
 
+    # Equipamento (1º item)
     eq0 = (ss.equip_cli or [{}])[0]
     fields["equip_tipo"] = (eq0.get("tipo") or "").strip()
     fields["equip_sn"] = (eq0.get("numero_serie") or "").strip()
     fields["equip_modelo"] = (eq0.get("modelo") or "").strip()
     fields["equip_status"] = (eq0.get("status") or "").strip()
 
+    # Observações
     fields["observacoes"] = (ss.observacoes or "").strip()
 
+    # imprime “apagado” (branco)
     x0, y0 = 36, 36
     line_h, fsize = 10, 6
     white = (1, 1, 1)
@@ -209,6 +221,7 @@ def _insert_blind_fields_and_cover_with_gateway(doc: fitz.Document, ss):
     ]:
         put_line(f"[[FIELD:{k}={fields.get(k, '')}]]")
 
+    # cobre com a 1ª foto do gateway
     if ss.fotos_gateway:
         try:
             img_bytes = ss.fotos_gateway[0]
@@ -222,7 +235,6 @@ def _insert_blind_fields_and_cover_with_gateway(doc: fitz.Document, ss):
 def render():
     st.header("🔌 RAT OI CPE NOVO")
 
-    # debug do selo (pode remover depois)
     st.caption(f"DEBUG selo: {SELO_IMG} | exists={os.path.exists(SELO_IMG)}")
 
     init_defaults({
@@ -373,6 +385,7 @@ def render():
         try:
             doc, page1 = open_pdf_template(PDF_BASE_PATH, hint="RAT OI CPE NOVO")
 
+            # ===== Timezone/now =====
             tzname = (ss.browser_tz.strip() or DEFAULT_TZ) if ss.usar_agora else DEFAULT_TZ
             try:
                 tz = ZoneInfo(tzname)
@@ -380,37 +393,40 @@ def render():
                 tz = ZoneInfo(DEFAULT_TZ)
             now = datetime.now(tz=tz)
 
+            # Cabeçalho (pág.1)
             insert_right_of(page1, ["Cliente"], ss.cliente, dx=8, dy=1)
             insert_right_of(page1, ["Número do Bilhete", "Numero do Bilhete"], ss.numero_chamado, dx=8, dy=1)
             insert_right_of(page1, ["Designação do Circuito", "Designacao do Circuito"], ss.numero_chamado, dx=8, dy=1)
 
+            # Horário Início
             r_ini = _pick_hit_top(page1, ["Horário Início", "Horario Inicio", "Horário inicio"])
             if r_ini:
                 _write_right_of_rect(page1, r_ini, ss.hora_inicio.strftime("%H:%M"), dx=6, dy=1, fontsize=10)
             else:
                 insert_right_of(page1, ["Horário Início", "Horario Inicio", "Horário inicio"], ss.hora_inicio.strftime("%H:%M"), dx=8, dy=1)
 
+            # Horário Término + 1,5cm
             r_term = _pick_hit_top(page1, ["Horário Término", "Horario Termino", "Horário termino", "Horário de término", "Horario de termino"])
             if r_term:
                 _write_right_of_rect(page1, r_term, ss.hora_termino.strftime("%H:%M"), dx=6 + _cm_to_pt(1.5), dy=1, fontsize=10)
             else:
                 insert_right_of(page1, ["Horário Término", "Horario Termino", "Horário termino"], ss.hora_termino.strftime("%H:%M"), dx=8, dy=1)
 
+            # Endereço Ponta A
             insert_right_of(page1, ["Endereço ponta A", "Endereço Ponta A"], ss.endereco_ponta_a, dx=8, dy=1)
 
+            # Data / Horário (última linha)
             data_txt = f"{now.strftime('%d')}  {now.strftime('%m')}   {now.strftime('%Y')}"
             hora_txt = now.strftime("%H:%M")
-
             r_data_bottom = _pick_hit_bottom(page1, ["Data"])
             r_hora_bottom = _pick_hit_bottom(page1, ["Horario", "Horário"])
-
             _write_right_of_rect(page1, r_data_bottom, data_txt, dx=10, dy=1, fontsize=8)
             _write_right_of_rect(page1, r_hora_bottom, hora_txt, dx=6, dy=1, fontsize=9)
 
             # ===== Página 2 =====
             page2 = doc[1] if doc.page_count >= 2 else doc.new_page()
 
-            # ✅ SELO imagem + texto na página 2 (canto inferior direito)
+            # ✅ SELO NA PÁGINA 2 (inferior direito)
             chamado = (ss.numero_chamado or "").strip() or "(sem chamado)"
             stamp_text = (
                 "Gerado automaticamente\n"
@@ -425,16 +441,77 @@ def render():
                 opacity=0.95
             )
 
-            # texto sempre (mesmo se imagem falhar)
-            rr = page2.rect
+            # texto do selo (sempre)
+            r = page2.rect
             page2.insert_textbox(
-                fitz.Rect(rr.width - 260, rr.height - 70, rr.width - 18, rr.height - 18),
+                fitz.Rect(r.width - 260, r.height - 70, r.width - 18, r.height - 18),
                 stamp_text,
                 fontsize=8,
                 fontname="helv",
                 align=0,
                 color=(0.2, 0.2, 0.2),
             )
+
+            # Equipamentos (colunas)
+            eq_title = _first_hit(page2, ["EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente"])
+            if eq_title:
+                col_tipo = _first_hit(page2, ["Tipo"])
+                col_sn = _first_hit(page2, ["Nº de Serie", "N° de Serie", "Nº de Série", "No de Serie", "N de Serie"])
+                col_modelo = _first_hit(page2, ["Modelo", "Fabricante"])
+                col_status = _first_hit(page2, ["Status"])
+
+                base_x = eq_title.x0
+                col_tipo_x = (col_tipo.x0 if col_tipo else base_x + 10)
+                col_sn_x = (col_sn.x0 if col_sn else base_x + 180)
+                col_modelo_x = (col_modelo.x0 if col_modelo else base_x + 320)
+                col_status_x = (col_status.x0 if col_status else base_x + 470)
+
+                DY, TOP, ROW, FS = 2, 36, 26, 10
+                for i, it in enumerate(ss.equip_cli):
+                    y = eq_title.y1 + TOP + i * ROW
+                    if it.get("tipo"):
+                        page2.insert_text((col_tipo_x, y + DY), str(it["tipo"]), fontsize=FS)
+                    if it.get("numero_serie"):
+                        page2.insert_text((col_sn_x, y + DY), str(it["numero_serie"]), fontsize=FS)
+                    if it.get("modelo"):
+                        page2.insert_text((col_modelo_x, y + DY), str(it["modelo"]), fontsize=FS)
+                    if it.get("status"):
+                        page2.insert_text((col_status_x, y + DY), str(it["status"]), fontsize=FS)
+
+            # Produtividade (sem mudanças)
+            obs_lines = []
+            if ss.produtivo:
+                linha = f"Produtivo: {ss.produtivo}"
+                if ss.produtivo == "produtivo parcial" and ss.prod_parcial_tipo:
+                    linha += f" - {ss.prod_parcial_tipo}"
+                    if ss.prod_parcial_tipo == "com BA" and (ss.ba_num or "").strip():
+                        linha += f" - BA {ss.ba_num.strip()}"
+                if (ss.suporte_mam or "").strip():
+                    linha += f" - acompanhado pelo analista {ss.suporte_mam}"
+                else:
+                    linha += " - acompanhado pelo analista"
+                obs_lines.append(linha)
+
+            acao_extra = ""
+            problema_extra = ""
+            if ss.produtivo == "produtivo parcial":
+                if ss.prod_parcial_tipo == "com BA" and (ss.ba_num or "").strip():
+                    acao_extra = f"BA: {ss.ba_num.strip()}"
+            elif ss.produtivo == "não-improdutivo":
+                if (ss.motivo_improdutivo or "").strip():
+                    problema_extra = ss.motivo_improdutivo.strip()
+
+            if problema_extra:
+                insert_textbox(page2, ["PROBLEMA ENCONTRADO", "Problema Encontrado"], problema_extra,
+                               width=540, y_offset=20, height=120, fontsize=10)
+            if acao_extra:
+                insert_textbox(page2, ["AÇÃO CORRETIVA", "Acao Corretiva", "Ação Corretiva"], acao_extra,
+                               width=540, y_offset=20, height=100, fontsize=10)
+
+            obs_final = "\n".join([t for t in [("\n".join(obs_lines)).strip(), (ss.observacoes or "").strip()] if t])
+            if obs_final:
+                insert_textbox(page2, ["OBSERVAÇÕES", "Observacoes", "Observações"], obs_final,
+                               width=540, y_offset=20, height=160, fontsize=10)
 
             # ===== Blindagem + fotos =====
             _insert_blind_fields_and_cover_with_gateway(doc, ss)
@@ -454,7 +531,6 @@ def render():
                 file_name=f"RAT_OI_CPE_{(ss.numero_chamado or 'sem_num')}.pdf",
                 mime="application/pdf"
             )
-
         except Exception as e:
             st.error("Falha ao gerar PDF OI CPE.")
             st.exception(e)
