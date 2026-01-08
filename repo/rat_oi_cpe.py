@@ -131,11 +131,9 @@ def equipamentos_editor_vertical():
         st.markdown(f"**Item {i+1}**")
         it["tipo"] = st.text_input("Tipo", value=it.get("tipo", ""), key=f"equip_{i}_tipo")
         it["numero_serie"] = st.text_input("Nº de Série", value=it.get("numero_serie", ""), key=f"equip_{i}_sn")
-        it["modelo"] = st.selectbox(
-            "Modelo", modelo_opts,
-            index=(modelo_opts.index(it.get("modelo", "")) if it.get("modelo", "") in modelo_opts else 0),
-            key=f"equip_{i}_modelo"
-        )
+        it["modelo"] = st.text.input("modelo", value=it.get("modelo", ""), key=f"equip_{i}_modelo")
+        
+     
         it["status"] = st.selectbox(
             "Status", status_opts,
             index=(status_opts.index(it.get("status", "")) if it.get("status", "") in status_opts else 0),
