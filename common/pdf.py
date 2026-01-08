@@ -169,3 +169,42 @@ def add_image_page(doc, img_bytes, margin=36):
     rect = fitz.Rect(x0, y0, x0 + new_w, y0 + new_h)
 
     page.insert_image(rect, stream=img_bytes, keep_proportion=True)
+
+def insert_stamp_image(
+    page: fitz.Page,
+    image_path: str,
+    where: str = "bottom_right",
+    width_cm: float = 4.2,
+    margin_x: float = 18,
+    margin_y: float = 16,
+    opacity: float = 0.95,
+):
+    """
+    Insere um PNG como imagem normal (via stream bytes) com tamanho controlado.
+    Retorna True se inseriu, False se não encontrou a imagem.
+    """
+    if not image_path or not os.path.exists(image_path):
+        return False
+
+    with open(image_path, "rb") as f:
+        img_bytes = f.read()
+
+    im = Image.open(BytesIO(img_bytes))
+    W, H = im.size
+
+    w = width_cm * 28.3464567
+    h = w * (H / W)
+
+    r = page.rect
+    if where == "bottom_right":
+        rect = fitz.Rect(r.width - w - margin_x, r.height - h - margin_y, r.width - margin_x, r.height - margin_y)
+    elif where == "bottom_left":
+        rect = fitz.Rect(margin_x, r.height - h - margin_y, margin_x + w, r.height - margin_y)
+    elif where == "top_right":
+        rect = fitz.Rect(r.width - w - margin_x, margin_y, r.width - margin_x, margin_y + h)
+    else:  # top_left
+        rect = fitz.Rect(margin_x, margin_y, margin_x + w, margin_y + h)
+
+    page.insert_image(rect, stream=img_bytes, keep_proportion=True, overlay=True, opacity=opacity)
+    return True
+
