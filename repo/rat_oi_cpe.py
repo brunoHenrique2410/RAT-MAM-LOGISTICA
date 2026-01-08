@@ -4,10 +4,6 @@
 # - Horário Término: deslocado ~1,5cm para direita
 # - Última linha "Data ... Horario: ...": fonte menor e data espaçada
 # - ✅ Selo: IMAGEM + TEXTO no canto inferior direito da PÁGINA 2 (robusto)
-#
-# Obs:
-# - Remove bullet "•" (vira "?") e usa "|"
-# - Usa insert_stamp_image (foto normal) do common/pdf.py
 
 import os, sys
 from io import BytesIO
@@ -26,11 +22,13 @@ if PROJECT_ROOT not in sys.path:
 
 from common.state import init_defaults
 from common.ui import assinatura_dupla_png, foto_gateway_uploader
+import common.pdf as pdf
+
 from common.pdf import (
     open_pdf_template, insert_right_of, insert_textbox, mark_X_left_of,
     add_image_page,
-    insert_stamp_image,   # ✅ selo como foto normal
 )
+
 
 PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
 PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_OI_CPE_NOVO.pdf")
