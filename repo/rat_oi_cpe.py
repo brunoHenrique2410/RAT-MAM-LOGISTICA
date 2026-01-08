@@ -524,15 +524,15 @@ def render():
             )
             r = page2.rect
             rect_txt = fitz.Rect(
-                r.width - 210,   # mais pra esquerda = aumenta esse número
-                r.height - 80,   # mais pra cima = aumenta esse número
+                r.width - 150,   # mais pra esquerda = aumenta esse número
+                r.height - 42,   # mais pra cima = aumenta esse número
                 r.width - 18,
                 r.height - 18
             )
             page2.insert_textbox(
                 rect_txt,
                 stamp_text,
-                fontsize=7,
+                fontsize=6,
                 fontname="helv",
                 align=0,
                 color=(0.2, 0.2, 0.2),
