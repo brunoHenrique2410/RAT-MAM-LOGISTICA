@@ -426,26 +426,28 @@ def render():
 
             # ===== Página 2 =====
             page2 = doc[1] if doc.page_count >= 2 else doc.new_page()
-            # ✅ SELO na 2ª página (inferior direito)
-            stamp_text = (
-                "Gerado automaticamente\n"
-                f"{now.strftime('%d/%m/%Y %H:%M')}   Chamado {ss.numero_chamado or '-'}"
+            ok = insert_stamp_image(
+                page2,
+                SELO_IMG,
+                where="bottom_right",
+                width_cm=4.2,   # ajuste o tamanho aqui
+                opacity=0.95
             )
 
-            if add_generation_stamp:
-                add_generation_stamp(
-                    page2,
-                    SELO_IMG,           # pode ser "" que cai no texto-only
-                    stamp_text,
-                    where="bottom_right",
-                    scale=0.55,
-                    opacity=0.85
-                )
-            else:
-                # fallback no canto inferior direito (sem a função)
+            # texto embaixo (opcional)
+            if ok:
+                stamp_text = f"Gerado automaticamente\n{now.strftime('%d/%m/%Y %H:%M')} | Chamado {ss.numero_chamado or '(sem chamado)'}"
+                # coloca o texto logo abaixo do selo
                 r = page2.rect
-                rect_txt = fitz.Rect(r.width - 240, r.height - 70, r.width - 18, r.height - 18)
-                page2.insert_textbox(rect_txt, stamp_text, fontsize=8, fontname="helv", align=0, color=(0.2, 0.2, 0.2))
+                page2.insert_textbox(
+                    fitz.Rect(r.width - 260, r.height - 60, r.width - 18, r.height - 18),
+                    stamp_text,
+                    fontsize=8,
+                    fontname="helv",
+                    align=0,
+                    color=(0.2, 0.2, 0.2),
+                )
+
 
 
             # Equipamentos (colunas)
