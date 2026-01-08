@@ -38,10 +38,8 @@ PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_OI_CPE_NOVO.pdf")
 DEFAULT_TZ = "America/Sao_Paulo"
 
 def _resolve_stamp_path() -> str:
-    # procura a partir do arquivo atual (repo/rat_oi_cpe.py)
-    base = os.path.dirname(os.path.abspath(__file__))   # .../repo
-    root = os.path.dirname(base)                        # project root
-    p = os.path.join(root, "assets", "selo_evernex_maminfo.png")
+    PDF_DIR = os.path.dirname(os.path.abspath(__file__))  
+    PDF_BASE_PATH = os.path.join(root, "assets", "selo_evernex_maminfo.png")
     return p if os.path.exists(p) else ""
 
     SELO_IMG = _resolve_stamp_path()
