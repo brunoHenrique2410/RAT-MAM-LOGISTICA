@@ -423,6 +423,27 @@ def render():
 
             # ===== Página 2 =====
             page2 = doc[1] if doc.page_count >= 2 else doc.new_page()
+            # ✅ SELO na 2ª página (inferior direito)
+            stamp_text = (
+                "Gerado automaticamente\n"
+                f"{now.strftime('%d/%m/%Y %H:%M')} • Chamado {ss.numero_chamado or '-'}"
+            )
+
+            if add_generation_stamp:
+                add_generation_stamp(
+                    page2,
+                    SELO_IMG,           # pode ser "" que cai no texto-only
+                    stamp_text,
+                    where="bottom_right",
+                    scale=0.55,
+                    opacity=0.85
+                )
+            else:
+                # fallback no canto inferior direito (sem a função)
+                r = page2.rect
+                rect_txt = fitz.Rect(r.width - 240, r.height - 70, r.width - 18, r.height - 18)
+                page2.insert_textbox(rect_txt, stamp_text, fontsize=8, fontname="helv", align=0, color=(0.2, 0.2, 0.2))
+
 
             # Equipamentos (colunas)
             eq_title = _first_hit(page2, ["EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente"])
