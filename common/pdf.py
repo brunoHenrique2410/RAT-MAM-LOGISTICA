@@ -43,6 +43,12 @@ def add_generation_stamp(
     # ---------- imagem ----------
     pix = fitz.Pixmap(image_path)
     img_w, img_h = pix.width * scale, pix.height * scale
+    # lê a imagem de forma segura (suporta PNG com alpha)
+    pix = fitz.Pixmap(image_path)
+    if pix.alpha:                 # se tiver transparência
+        pix = fitz.Pixmap(fitz.csRGB, pix)
+
+    img_w, img_h = pix.width * scale, pix.height * scale
 
     if where == "bottom_right":
         rect_img = fitz.Rect(
