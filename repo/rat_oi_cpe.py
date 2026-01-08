@@ -445,7 +445,7 @@ def render():
             # caixa no canto inferior direito (ajuste fino aqui)
             rect_txt = fitz.Rect(
                 r.width - 150,   # mais pra esquerda = aumenta esse número
-                r.height - 40,   # mais pra cima = aumenta esse número
+                r.height - 42,   # mais pra cima = aumenta esse número
                 r.width - 18,
                 r.height - 18
             )
@@ -453,7 +453,7 @@ def render():
             page2.insert_textbox(
                 rect_txt,
                 stamp_text,
-                fontsize=6,
+                fontsize=7,
                 fontname="helv",
                 align=0,
                 color=(0.2, 0.2, 0.2),
