@@ -430,8 +430,14 @@ def render():
                 "Gerado automaticamente\n"
                 f"{now.strftime('%d/%m/%Y %H:%M')} | Chamado {chamado}"
             )
+            # ===== Página 2 =====
+            page2 = doc[1] if doc.page_count >= 2 else doc.new_page()
+
+            # ===== SELO na página 2 (inferior direito) =====
+            import common.pdf as pdf  # pode ficar no topo do arquivo também
+
             ok = False
-             if hasattr(pdf, "insert_stamp_image"):
+            if hasattr(pdf, "insert_stamp_image"):
                 ok = pdf.insert_stamp_image(
                     page2,
                     SELO_IMG,
@@ -440,7 +446,24 @@ def render():
                     opacity=0.95
                 )
             else:
-                st.error("insert_stamp_image NÃO existe em common/pdf.py (símbolo não exportado).")
+                st.warning("common.pdf não tem insert_stamp_image (confira common/pdf.py no GitHub).")
+
+            if ok:
+                chamado = (ss.numero_chamado or "").strip() or "(sem chamado)"
+                stamp_text = (
+                    "Gerado automaticamente\n"
+                    f"{now.strftime('%d/%m/%Y %H:%M')} | Chamado {chamado}"
+                )
+                r = page2.rect
+                page2.insert_textbox(
+                    fitz.Rect(r.width - 260, r.height - 70, r.width - 18, r.height - 18),
+                    stamp_text,
+                    fontsize=8,
+                    fontname="helv",
+                    align=0,
+                    color=(0.2, 0.2, 0.2),
+                )
+
 
 
             # texto do selo (sempre)
