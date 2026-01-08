@@ -7,7 +7,6 @@ from PIL import Image  # necessário para add_image_page robusto
 
 CM = 28.3465  # pontos por cm
 
-
 def add_generation_stamp(
     page: fitz.Page,
     image_path: str,
