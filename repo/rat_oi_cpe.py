@@ -1,8 +1,9 @@
 # repo/rat_oi_cpe.py — RAT OI CPE NOVO
 # ✅ Ajustes:
-# - Horário Início: UI + PDF
-# - Horário Término: deslocado ~1,5cm para direita
-# - Última linha "Data ... Horario: ...": fonte menor e data espaçada
+# - Preenchimento completo (Endereço + Nº Ponta A + Serviços + Aceite)
+# - Fotos anexadas no final (robusto p/ UploadedFile)
+# - Motivo improdutivo: TEXTO LIVRE (sem lista)
+# - Selo (TEXTO) no canto inferior direito da PÁGINA 2 (imagem fica no template)
 
 import os, sys
 from io import BytesIO
@@ -14,8 +15,8 @@ import streamlit.components.v1 as components
 import fitz  # PyMuPDF
 
 # ---------- PATHS ----------
-THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(THIS_DIR)
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))  # .../repo
+PROJECT_ROOT = os.path.dirname(THIS_DIR)               # .../
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
@@ -36,6 +37,36 @@ def _cm_to_pt(cm: float) -> float:
     return cm * 28.3464567
 
 
+def _as_bytes(x):
+    """Converte UploadedFile/BytesIO/bytes para bytes."""
+    if x is None:
+        return None
+    if isinstance(x, (bytes, bytearray)):
+        return bytes(x)
+    if hasattr(x, "getvalue"):
+        try:
+            return x.getvalue()
+        except Exception:
+            pass
+    if hasattr(x, "read"):
+        try:
+            pos = None
+            try:
+                pos = x.tell()
+            except Exception:
+                pos = None
+            data = x.read()
+            try:
+                if pos is not None:
+                    x.seek(pos)
+            except Exception:
+                pass
+            return data
+        except Exception:
+            pass
+    return None
+
+
 def _all_hits(page, labels):
     if isinstance(labels, str):
         labels = [labels]
@@ -49,8 +80,8 @@ def _all_hits(page, labels):
 
 
 def _first_hit(page, labels):
-    r = _all_hits(page, labels)
-    return r[0] if r else None
+    hits = _all_hits(page, labels)
+    return hits[0] if hits else None
 
 
 def _pick_hit_top(page, labels):
@@ -72,25 +103,6 @@ def _write_right_of_rect(page, rect, text, dx=6, dy=1, fontsize=10):
     return True
 
 
-def _as_bytes(x):
-    """Converte UploadedFile/stream/bytearray -> bytes (robusto)."""
-    if x is None:
-        return None
-    if isinstance(x, (bytes, bytearray)):
-        return bytes(x)
-    if hasattr(x, "getvalue"):
-        try:
-            return x.getvalue()
-        except Exception:
-            return None
-    if hasattr(x, "read"):
-        try:
-            return x.read()
-        except Exception:
-            return None
-    return None
-
-
 # ---------- equipamentos (vertical) ----------
 def _normalize_equip_rows(rows):
     out = []
@@ -110,7 +122,8 @@ def equipamentos_editor_vertical():
     ss = st.session_state
     ss.equip_cli = _normalize_equip_rows(ss.equip_cli)
 
-    # ✅ SEM LISTA: status também pode ficar como lista (se quiser tirar tbm, vira text_input)
+    # (mantive seus combos; se quiser virar texto livre também, eu ajusto depois)
+    modelo_opts = ["", "aligera", "SynWay"]
     status_opts = [
         "", "equipamento no local", "instalado pelo técnico", "retirado pelo técnico",
         "spare técnico", "técnico não levou equipamento"
@@ -128,11 +141,11 @@ def equipamentos_editor_vertical():
         st.markdown(f"**Item {i+1}**")
         it["tipo"] = st.text_input("Tipo", value=it.get("tipo", ""), key=f"equip_{i}_tipo")
         it["numero_serie"] = st.text_input("Nº de Série", value=it.get("numero_serie", ""), key=f"equip_{i}_sn")
-
-        # ✅ MODELO AGORA É TEXTO LIVRE
-        it["modelo"] = st.text_input("Modelo", value=it.get("modelo", ""), key=f"equip_{i}_modelo_txt")
-
-        # status mantém selectbox (se quiser tirar também, te mando)
+        it["modelo"] = st.selectbox(
+            "Modelo", modelo_opts,
+            index=(modelo_opts.index(it.get("modelo", "")) if it.get("modelo", "") in modelo_opts else 0),
+            key=f"equip_{i}_modelo"
+        )
         it["status"] = st.selectbox(
             "Status", status_opts,
             index=(status_opts.index(it.get("status", "")) if it.get("status", "") in status_opts else 0),
@@ -185,7 +198,6 @@ def _insert_blind_fields_and_cover_with_gateway(doc: fitz.Document, ss):
     fields["teste_final"] = (ss.teste_wan or "NA").upper().strip()
     fields["aceitacao_resp"] = (ss.aceitacao_resp or "").strip()
 
-    # Produtividade
     prod = (ss.produtivo or "").strip()
     fields["produtivo"] = prod
     fields["produtivo_parcial_tipo"] = (ss.prod_parcial_tipo or "").strip() if prod == "produtivo parcial" else ""
@@ -256,9 +268,7 @@ def render():
         "equip_cli": [{"tipo": "", "numero_serie": "", "modelo": "", "status": ""}],
         "observacoes": "",
         "suporte_mam": "",
-
-        # ✅ sem opções: ainda usamos os mesmos campos, mas a UI vira texto livre
-        "produtivo": "sim-totalmente produtivo",  # pode deixar vazio se quiser
+        "produtivo": "sim-totalmente produtivo",
         "prod_parcial_tipo": "",
         "ba_num": "",
         "motivo_improdutivo": "",
@@ -333,15 +343,35 @@ def render():
 
     # 5) Produtividade & Observações
     with st.expander("5) Produtividade & Observações", expanded=True):
-        # ✅ sem opções: texto livre
-        ss.produtivo = st.text_input("Produtivo? (texto livre)", value=ss.produtivo)
+        ss.produtivo = st.selectbox(
+            "Produtivo?",
+            ["sim-totalmente produtivo", "produtivo parcial", "não-improdutivo"],
+            index=["sim-totalmente produtivo", "produtivo parcial", "não-improdutivo"].index(ss.produtivo)
+        )
 
-        # se você usa isso no PDF, mantém como campos livres também
-        ss.prod_parcial_tipo = st.text_input("Tipo (se produtivo parcial)", value=ss.prod_parcial_tipo)
-        ss.ba_num = st.text_input("BA (se houver)", value=ss.ba_num)
+        if ss.produtivo == "produtivo parcial":
+            ss.prod_parcial_tipo = st.radio(
+                "Tipo de parcial",
+                ["com BA", "problema PABX"],
+                index=(["com BA", "problema PABX"].index(ss.prod_parcial_tipo)
+                       if ss.prod_parcial_tipo in ["com BA", "problema PABX"] else 0)
+            )
+            if ss.prod_parcial_tipo == "com BA":
+                ss.ba_num = st.text_input("Nº do BA", value=ss.ba_num)
+            else:
+                ss.ba_num = ""
+        else:
+            ss.prod_parcial_tipo = ""
+            ss.ba_num = ""
 
-        # ✅ sem opções: improdutividade texto livre
-        ss.motivo_improdutivo = st.text_input("Motivo da improdutividade (texto livre)", value=ss.motivo_improdutivo)
+        # ✅ sem lista: texto livre
+        if ss.produtivo == "não-improdutivo":
+            ss.motivo_improdutivo = st.text_input(
+                "Motivo da improdutividade (texto livre)",
+                value=ss.motivo_improdutivo
+            )
+        else:
+            ss.motivo_improdutivo = ""
 
         ss.observacoes = st.text_area("Observações (texto adicional)", value=ss.observacoes, height=100)
 
@@ -362,19 +392,19 @@ def render():
                 tz = ZoneInfo(DEFAULT_TZ)
             now = datetime.now(tz=tz)
 
-            # ===== CABEÇALHO (pág.1) =====
+            # ====== PÁG. 1 — CABEÇALHO ======
             insert_right_of(page1, ["Cliente"], ss.cliente, dx=8, dy=1)
             insert_right_of(page1, ["Número do Bilhete", "Numero do Bilhete"], ss.numero_chamado, dx=8, dy=1)
             insert_right_of(page1, ["Designação do Circuito", "Designacao do Circuito"], ss.numero_chamado, dx=8, dy=1)
 
-            # Horário Início
+            # Horário Início (âncora do topo)
             r_ini = _pick_hit_top(page1, ["Horário Início", "Horario Inicio", "Horário inicio"])
             if r_ini:
                 _write_right_of_rect(page1, r_ini, ss.hora_inicio.strftime("%H:%M"), dx=6, dy=1, fontsize=10)
             else:
                 insert_right_of(page1, ["Horário Início", "Horario Inicio", "Horário inicio"], ss.hora_inicio.strftime("%H:%M"), dx=8, dy=1)
 
-            # Horário Término + 1,5cm
+            # Horário Término (âncora do topo) + 1,5cm pra direita
             r_term = _pick_hit_top(page1, ["Horário Término", "Horario Termino", "Horário termino", "Horário de término", "Horario de termino"])
             if r_term:
                 _write_right_of_rect(page1, r_term, ss.hora_termino.strftime("%H:%M"), dx=6 + _cm_to_pt(1.5), dy=1, fontsize=10)
@@ -384,22 +414,26 @@ def render():
             # Endereço Ponta A
             insert_right_of(page1, ["Endereço ponta A", "Endereço Ponta A"], ss.endereco_ponta_a, dx=8, dy=1)
 
-            # ===== Nº (Ponta A) na mesma linha do Endereço =====
+            # Nº (Ponta A) — tenta achar o rótulo "Nº" na mesma linha do endereço
             num_label_rect = None
             no_rects = _all_hits(page1, ["N°", "Nº", "N o", "N °"])
             base_rect = _first_hit(page1, ["Endereço ponta A", "Endereço Ponta A"])
             if no_rects and base_rect:
                 same_line = [
                     r for r in no_rects
-                    if abs((r.y0 + r.height/2) - (base_rect.y0 + base_rect.height/2)) < 12
+                    if abs((r.y0 + r.height / 2) - (base_rect.y0 + base_rect.height / 2)) < 12
                 ]
                 target_no = same_line[0] if same_line else no_rects[0]
                 num_label_rect = target_no
                 x = target_no.x1 + 6
-                y = target_no.y0 + target_no.height/1.5 + 1
+                y = target_no.y0 + target_no.height / 1.5 + 1
                 page1.insert_text((x, y), ss.numero_ponta_a or "", fontsize=10)
 
-            # ===== Serviços (X) =====
+            # Responsável local / telefone (se o template tiver esses rótulos)
+            insert_right_of(page1, ["Responsável local", "RESPONSÁVEL LOCAL", "Responsavel local"], ss.responsavel_local, dx=8, dy=1)
+            insert_right_of(page1, ["Telefone do responsável", "Telefone do Responsável", "Tel. Responsável", "Telefone Resp."], ss.responsavel_tel, dx=8, dy=1)
+
+            # Serviços (X)
             if ss.svc_instalacao:
                 mark_X_left_of(page1, "Instalação", dx=-16, dy=0)
             if ss.svc_retirada:
@@ -415,7 +449,7 @@ def render():
             if ss.svc_servico_interno:
                 mark_X_left_of(page1, "Serviço interno", dx=-16, dy=0) or mark_X_left_of(page1, "Servico interno", dx=-16, dy=0)
 
-            # ===== WAN S / N / NA =====
+            # WAN radio (X)
             wan_label = _first_hit(page1, ["Teste de conectividade WAN", "Teste final com equipamento do cliente"])
             if wan_label:
                 pos_S = wan_label.x1 + 138
@@ -428,11 +462,11 @@ def render():
                     fontsize=12
                 )
 
-            # Técnico / Cliente validador
+            # Técnico / Cliente Ciente
             insert_right_of(page1, ["Técnico", "Tecnico"], ss.tecnico_nome, dx=8, dy=1)
             insert_right_of(page1, ["Cliente Ciente", "Cliente  Ciente", "Cliente Validador"], ss.cliente_validador_nome, dx=8, dy=1)
 
-            # Assinaturas
+            # Assinaturas (slots)
             sig_slots = _all_hits(page1, ["Assinatura", "ASSINATURA"])
             sig_slots = sorted(sig_slots, key=lambda r: (r.y0, r.x0))
             tech_slot = sig_slots[0] if len(sig_slots) >= 1 else None
@@ -440,7 +474,8 @@ def render():
 
             tech_x = None
             if tech_slot and ss.sig_tec_png:
-                rect = fitz.Rect(tech_slot.x0 + 40, tech_slot.y0 - 15, tech_slot.x0 + 240, tech_slot.y0 + 20)
+                rect = fitz.Rect(tech_slot.x0 + 40, tech_slot.y0 - 15,
+                                 tech_slot.x0 + 40 + 200, tech_slot.y0 + 20)
                 tech_x = rect.x0
                 page1.insert_image(rect, stream=ss.sig_tec_png, keep_proportion=True)
 
@@ -449,11 +484,11 @@ def render():
                 rect = fitz.Rect(base_x, cli_slot.y0 - 10, base_x + 200, cli_slot.y0 + 145)
                 page1.insert_image(rect, stream=ss.sig_cli_png, keep_proportion=True)
 
-            # Contato do validador (telefone)
+            # Telefone validador (perto da assinatura do cliente)
             if cli_slot and (ss.validador_tel or "").strip() and num_label_rect is not None:
                 x = num_label_rect.x0
-                y = cli_slot.y0 + cli_slot.height/1.5 + 55
-                page1.insert_text((x, y), ss.validador_tel.strip(), fontsize=10)
+                y = cli_slot.y0 + cli_slot.height / 1.5 + 55
+                page1.insert_text((x, y), f"{ss.validador_tel.strip()}", fontsize=10)
 
             # Data / Horário (última linha)
             data_txt = f"{now.strftime('%d')}  {now.strftime('%m')}   {now.strftime('%Y')}"
@@ -463,7 +498,6 @@ def render():
             _write_right_of_rect(page1, r_data_bottom, data_txt, dx=6, dy=1, fontsize=9)
             _write_right_of_rect(page1, r_hora_bottom, hora_txt, dx=6, dy=1, fontsize=9)
 
-            # Aceitação do serviço
             insert_right_of(
                 page1,
                 ["Aceitação do serviço pelo responsável", "Aceitacao do servico pelo responsavel"],
@@ -471,17 +505,33 @@ def render():
                 dx=8, dy=1
             )
 
-            # ===== Página 2 =====
+            # ====== PÁG. 2 ======
             page2 = doc[1] if doc.page_count >= 2 else doc.new_page()
 
-            # ✅ SELO: texto no canto inferior direito da página 2
+            # ✅ SELO (TEXTO) NO INFERIOR DIREITO (PÁG.2)
             chamado = (ss.numero_chamado or "").strip() or "-"
-            stamp_text = "Gerado automaticamente\n" + f"{now.strftime('%d/%m/%Y %H:%M')} • Chamado {chamado}"
+            stamp_text = (
+                "Gerado automaticamente\n"
+                f"{now.strftime('%d/%m/%Y %H:%M')} • Chamado {chamado}"
+            )
             r = page2.rect
-            rect_txt = fitz.Rect(r.width - 210, r.height - 80, r.width - 18, r.height - 18)
-            page2.insert_textbox(rect_txt, stamp_text, fontsize=7, fontname="helv", align=0, color=(0.2, 0.2, 0.2), overlay=True)
+            rect_txt = fitz.Rect(
+                r.width - 240,   # mais pra esquerda -> diminui
+                r.height - 70,   # mais pra cima -> diminui
+                r.width - 18,
+                r.height - 18
+            )
+            page2.insert_textbox(
+                rect_txt,
+                stamp_text,
+                fontsize=7,
+                fontname="helv",
+                align=0,
+                color=(0.25, 0.25, 0.25),
+                overlay=True
+            )
 
-            # ===== Equipamentos (pág.2) =====
+            # Equipamentos (colunas)
             eq_title = _first_hit(page2, ["EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente"])
             if eq_title:
                 col_tipo = _first_hit(page2, ["Tipo"])
@@ -507,35 +557,50 @@ def render():
                     if it.get("status"):
                         page2.insert_text((col_status_x, y + DY), str(it["status"]), fontsize=FS)
 
-            # ===== Produtividade / Observações (pág.2) =====
-            # Agora tudo é texto livre, então só joga o que tiver
+            # Produtividade → textos
             obs_lines = []
-            if (ss.produtivo or "").strip():
-                obs_lines.append(f"Produtivo: {ss.produtivo.strip()}")
+            if ss.produtivo:
+                linha = f"Produtivo: {ss.produtivo}"
+                if ss.produtivo == "produtivo parcial" and ss.prod_parcial_tipo:
+                    linha += f" - {ss.prod_parcial_tipo}"
+                    if ss.prod_parcial_tipo == "com BA" and (ss.ba_num or "").strip():
+                        linha += f" - BA {ss.ba_num.strip()}"
+                if (ss.suporte_mam or "").strip():
+                    linha += f" - acompanhado pelo analista {ss.suporte_mam}"
+                else:
+                    linha += " - acompanhado pelo analista"
+                obs_lines.append(linha)
 
-            if (ss.prod_parcial_tipo or "").strip():
-                obs_lines.append(f"Tipo parcial: {ss.prod_parcial_tipo.strip()}")
+            acao_extra = ""
+            problema_extra = ""
+            if ss.produtivo == "produtivo parcial":
+                if ss.prod_parcial_tipo == "com BA" and (ss.ba_num or "").strip():
+                    acao_extra = f"BA: {ss.ba_num.strip()}"
+            elif ss.produtivo == "não-improdutivo":
+                if (ss.motivo_improdutivo or "").strip():
+                    problema_extra = ss.motivo_improdutivo.strip()
 
-            if (ss.ba_num or "").strip():
-                obs_lines.append(f"BA: {ss.ba_num.strip()}")
-
-            if (ss.motivo_improdutivo or "").strip():
-                insert_textbox(page2, ["PROBLEMA ENCONTRADO", "Problema Encontrado"], ss.motivo_improdutivo.strip(),
+            if problema_extra:
+                insert_textbox(page2, ["PROBLEMA ENCONTRADO", "Problema Encontrado"], problema_extra,
                                width=540, y_offset=20, height=120, fontsize=10)
+            if acao_extra:
+                insert_textbox(page2, ["AÇÃO CORRETIVA", "Acao Corretiva", "Ação Corretiva"], acao_extra,
+                               width=540, y_offset=20, height=100, fontsize=10)
 
             obs_final = "\n".join([t for t in [("\n".join(obs_lines)).strip(), (ss.observacoes or "").strip()] if t])
             if obs_final:
                 insert_textbox(page2, ["OBSERVAÇÕES", "Observacoes", "Observações"], obs_final,
                                width=540, y_offset=20, height=160, fontsize=10)
 
-            # ===== Blindagem + fotos (extras no final) =====
+            # ===== Blindagem + fotos =====
             _insert_blind_fields_and_cover_with_gateway(doc, ss)
 
-            imgs = [_as_bytes(i) for i in (ss.fotos_gateway or [])]
-            imgs = [i for i in imgs if i]
-            if len(imgs) > 1:
-                for b in imgs[1:]:
-                    add_image_page(doc, b)
+            # anexa demais fotos (a partir da 2ª)
+            if ss.fotos_gateway and len(ss.fotos_gateway) > 1:
+                for item in ss.fotos_gateway[1:]:
+                    b = _as_bytes(item)
+                    if b:
+                        add_image_page(doc, b)
 
             out = BytesIO()
             doc.save(out)
