@@ -25,6 +25,7 @@ from common.ui import assinatura_dupla_png, foto_gateway_uploader
 from common.pdf import (
     open_pdf_template, insert_right_of, insert_textbox, mark_X_left_of,
     add_image_page
+    insert_stamp_image,
 )
 
 # Import seguro do selo
