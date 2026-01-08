@@ -444,8 +444,8 @@ def render():
 
             # caixa no canto inferior direito (ajuste fino aqui)
             rect_txt = fitz.Rect(
-                r.width - 200,   # mais pra esquerda = aumenta esse número
-                r.height - 45,   # mais pra cima = aumenta esse número
+                r.width - 170,   # mais pra esquerda = aumenta esse número
+                r.height - 48,   # mais pra cima = aumenta esse número
                 r.width - 18,
                 r.height - 18
             )
