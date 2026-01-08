@@ -433,38 +433,32 @@ def render():
             # ===== Página 2 =====
             page2 = doc[1] if doc.page_count >= 2 else doc.new_page()
 
-            # ===== SELO na página 2 (inferior direito) =====
-            import common.pdf as pdf  # pode ficar no topo do arquivo também
-            st.write("insert_stamp_image existe?", hasattr(pdf, "insert_stamp_image"))
-            ok = False
-            if hasattr(pdf, "insert_stamp_image"):
-                ok = pdf.insert_stamp_image(
-                    page2,
-                    SELO_IMG,
-                    where="bottom_right",
-                    width_cm=4.2,
-                    opacity=0.95
-                )
-            else:
-                st.warning("common.pdf não tem insert_stamp_image (confira common/pdf.py no GitHub).")
+         # ===== Texto do selo na página 2 (imagem já está no template) =====
+            chamado = (ss.numero_chamado or "").strip() or "-"
+            stamp_text = (
+                "Gerado automaticamente\n"
+                f"{now.strftime('%d/%m/%Y %H:%M')} • Chamado {chamado}"
+            )
 
-            if ok:
-                chamado = (ss.numero_chamado or "").strip() or "(sem chamado)"
-                stamp_text = (
-                    "Gerado automaticamente\n"
-                    f"{now.strftime('%d/%m/%Y %H:%M')} | Chamado {chamado}"
-                )
-                r = page2.rect
-                page2.insert_textbox(
-                    fitz.Rect(r.width - 260, r.height - 70, r.width - 18, r.height - 18),
-                    stamp_text,
-                    fontsize=8,
-                    fontname="helv",
-                    align=0,
-                    color=(0.2, 0.2, 0.2),
-                )
+            r = page2.rect
 
+                # caixa no canto inferior direito (ajuste fino aqui)
+                rect_txt = fitz.Rect(
+                r.width - 260,   # mais pra esquerda = aumenta esse número?
+                r.height - 70,   # mais pra cima = aumenta esse número?
+                r.width - 18,
+                r.height - 18
+            )
 
+            page2.insert_textbox(
+                rect_txt,
+                stamp_text,
+                fontsize=8,
+                fontname="helv",
+                align=0,
+                color=(0.2, 0.2, 0.2),
+                overlay=True
+            )
 
             # texto do selo (sempre)
             r = page2.rect
