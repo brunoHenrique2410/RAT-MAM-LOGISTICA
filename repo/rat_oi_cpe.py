@@ -435,7 +435,7 @@ def render():
 
             # ===== SELO na página 2 (inferior direito) =====
             import common.pdf as pdf  # pode ficar no topo do arquivo também
-
+            st.write("insert_stamp_image existe?", hasattr(pdf, "insert_stamp_image"))
             ok = False
             if hasattr(pdf, "insert_stamp_image"):
                 ok = pdf.insert_stamp_image(
