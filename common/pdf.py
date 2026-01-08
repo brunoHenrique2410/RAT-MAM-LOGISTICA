@@ -12,100 +12,101 @@ def add_generation_stamp(
     image_path: str,
     text: str,
     where: str = "bottom_right",
-    scale: float = 0.55,
-    opacity: float = 0.85,
+    width_cm: float = 4.2,      # ← controla o tamanho do selo
+    opacity: float = 0.90,
 ):
     """
-    Adiciona um selo de geração automática no PDF (imagem + texto).
-    - Se image_path não existir, cai em fallback apenas texto.
+    Selo de geração automática (imagem + texto).
+    Robusto para PNG com alpha / perfil de cor (via PIL + stream).
     """
     r = page.rect
     margin_x, margin_y = 18, 16
 
     # ---------- fallback: só texto ----------
     if not image_path or not os.path.exists(image_path):
-        rect_txt = fitz.Rect(
-            r.width - 240,
-            r.height - 70,
-            r.width - 18,
-            r.height - 18
-        )
+        rect_txt = fitz.Rect(r.width - 260, r.height - 80, r.width - 18, r.height - 18)
         page.insert_textbox(
             rect_txt,
             text,
-            fontsize=8.5,             # um pouco maior pra ficar visível
+            fontsize=8.5,
             fontname="helv",
             align=fitz.TEXT_ALIGN_LEFT,
             color=(0.20, 0.20, 0.20),
         )
         return
 
-    # ---------- imagem ----------
-    pix = fitz.Pixmap(image_path)
-    img_w, img_h = pix.width * scale, pix.height * scale
-    # lê a imagem de forma segura (suporta PNG com alpha)
-    pix = fitz.Pixmap(image_path)
-    if pix.alpha:                 # se tiver transparência
-        pix = fitz.Pixmap(fitz.csRGB, pix)
+    # ---------- carrega imagem via PIL (robusto) ----------
+    try:
+        from PIL import Image
+        from io import BytesIO
 
-    img_w, img_h = pix.width * scale, pix.height * scale
+        im = Image.open(image_path)
+
+        # normaliza para RGBA e re-encode em PNG (limpo)
+        if im.mode != "RGBA":
+            im = im.convert("RGBA")
+
+        buf = BytesIO()
+        im.save(buf, format="PNG")
+        img_bytes = buf.getvalue()
+
+        W, H = im.size  # pixels
+    except Exception:
+        # se PIL falhar, cai em texto-only
+        rect_txt = fitz.Rect(r.width - 260, r.height - 80, r.width - 18, r.height - 18)
+        page.insert_textbox(rect_txt, text, fontsize=8.5, fontname="helv", align=0, color=(0.2, 0.2, 0.2))
+        return
+
+    # ---------- define tamanho no PDF por largura fixa ----------
+    target_w = width_cm * 28.3464567
+    target_h = target_w * (H / W)
 
     if where == "bottom_right":
         rect_img = fitz.Rect(
-            r.width - img_w - margin_x,
-            r.height - img_h - margin_y,
+            r.width - target_w - margin_x,
+            r.height - target_h - margin_y,
             r.width - margin_x,
             r.height - margin_y
         )
     elif where == "bottom_left":
         rect_img = fitz.Rect(
             margin_x,
-            r.height - img_h - margin_y,
-            margin_x + img_w,
+            r.height - target_h - margin_y,
+            margin_x + target_w,
             r.height - margin_y
         )
     elif where == "top_right":
         rect_img = fitz.Rect(
-            r.width - img_w - margin_x,
+            r.width - target_w - margin_x,
             margin_y,
             r.width - margin_x,
-            margin_y + img_h
+            margin_y + target_h
         )
     else:  # top_left
         rect_img = fitz.Rect(
             margin_x,
             margin_y,
-            margin_x + img_w,
-            margin_y + img_h
+            margin_x + target_w,
+            margin_y + target_h
         )
 
+    # ---------- insere imagem ----------
     page.insert_image(
         rect_img,
-        filename=image_path,
+        stream=img_bytes,
         keep_proportion=True,
         overlay=True,
         opacity=opacity
     )
 
-    # ---------- texto ----------
+    # ---------- insere texto ----------
     gap = 6
     txt_height = 34
+    rect_txt = fitz.Rect(rect_img.x0, rect_img.y1 + gap, rect_img.x1, rect_img.y1 + gap + txt_height)
 
-    rect_txt = fitz.Rect(
-        rect_img.x0,
-        rect_img.y1 + gap,
-        rect_img.x1,
-        rect_img.y1 + gap + txt_height
-    )
-
-    # se estourar o rodapé, joga o texto para cima da imagem
+    # se estourar rodapé, joga o texto pra cima
     if rect_txt.y1 > r.height - 6:
-        rect_txt = fitz.Rect(
-            rect_img.x0,
-            rect_img.y0 - gap - txt_height,
-            rect_img.x1,
-            rect_img.y0 - gap
-        )
+        rect_txt = fitz.Rect(rect_img.x0, rect_img.y0 - gap - txt_height, rect_img.x1, rect_img.y0 - gap)
 
     page.insert_textbox(
         rect_txt,
@@ -115,6 +116,7 @@ def add_generation_stamp(
         align=fitz.TEXT_ALIGN_LEFT,
         color=(0.20, 0.20, 0.20),
     )
+
 
 
 def _find_template_by_hint(hint: str, base_dir: str) -> str | None:
