@@ -433,15 +433,13 @@ def render():
             # ===== Página 2 =====
             page2 = doc[1] if doc.page_count >= 2 else doc.new_page()
 
-         # ===== Texto do selo na página 2 (imagem já está no template) =====
+            # ===== Texto do selo na página 2 (imagem já está no template) =====
             chamado = (ss.numero_chamado or "").strip() or "-"
             stamp_text = (
                 "Gerado automaticamente\n"
                 f"{now.strftime('%d/%m/%Y %H:%M')} • Chamado {chamado}"
             )
-
             r = page2.rect
-
                 # caixa no canto inferior direito (ajuste fino aqui)
                 rect_txt = fitz.Rect(
                 r.width - 260,   # mais pra esquerda = aumenta esse número?
@@ -449,7 +447,6 @@ def render():
                 r.width - 18,
                 r.height - 18
             )
-
             page2.insert_textbox(
                 rect_txt,
                 stamp_text,
@@ -459,7 +456,6 @@ def render():
                 color=(0.2, 0.2, 0.2),
                 overlay=True
             )
-
             # texto do selo (sempre)
             r = page2.rect
             page2.insert_textbox(
