@@ -18,7 +18,8 @@ def insert_stamp_image(
     opacity: float = 0.95,
 ):
     """
-    Insere um PNG como "foto normal" (via stream bytes) com tamanho controlado.
+    Insere um PNG como imagem normal (via stream bytes) com tamanho controlado.
+    Retorna True se inseriu, False se não encontrou a imagem.
     """
     if not image_path or not os.path.exists(image_path):
         return False
@@ -26,9 +27,11 @@ def insert_stamp_image(
     with open(image_path, "rb") as f:
         img_bytes = f.read()
 
+    # pega tamanho original via PIL (mantém proporção)
     im = Image.open(BytesIO(img_bytes))
     W, H = im.size
 
+    # largura desejada em pontos
     w = width_cm * 28.3464567
     h = w * (H / W)
 
@@ -124,9 +127,23 @@ def mark_X_left_of(page, label_text, dx=-14, dy=0, occurrence=1, near_text=None,
     page.insert_text((x, y), "X", fontsize=fontsize)
 
 
+def insert_signature_png(page, labels, sig_png_bytes, rel_rect, occurrence=1):
+    if not sig_png_bytes:
+        return
+    r = search_once(page, labels, occurrence=occurrence)
+    if not r:
+        return
+    rect = fitz.Rect(
+        r.x0 + rel_rect[0], r.y1 + rel_rect[1],
+        r.x0 + rel_rect[2], r.y1 + rel_rect[3]
+    )
+    page.insert_image(rect, stream=sig_png_bytes, keep_proportion=True)
+
+
 def add_image_page(doc, img_bytes, margin=36):
     if not img_bytes:
         return
+
     try:
         pil = Image.open(BytesIO(img_bytes))
         if pil.mode not in ("RGB", "L"):
@@ -139,6 +156,7 @@ def add_image_page(doc, img_bytes, margin=36):
 
     page = doc.new_page()
     w, h = page.rect.width, page.rect.height
+
     max_w, max_h = w - 2 * margin, h - 2 * margin
     if max_w <= 0 or max_h <= 0:
         max_w, max_h = w, h
