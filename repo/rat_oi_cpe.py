@@ -113,7 +113,7 @@ def equipamentos_editor_vertical():
     ss = st.session_state
     ss.equip_cli = _normalize_equip_rows(ss.equip_cli)
 
-    modelo_opts = ["", "aligera", "SynWay"]
+
     status_opts = [
         "", "equipamento no local", "instalado pelo técnico", "retirado pelo técnico",
         "spare técnico", "técnico não levou equipamento"
