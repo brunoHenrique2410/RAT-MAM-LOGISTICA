@@ -24,7 +24,8 @@ from common.state import init_defaults
 from common.ui import assinatura_dupla_png, foto_gateway_uploader
 from common.pdf import (
     open_pdf_template, insert_right_of, insert_textbox, mark_X_left_of,
-    add_image_page
+    add_image_page,
+    insert_stamp_image,
 )
 
 # Import seguro do selo
@@ -426,6 +427,7 @@ def render():
 
             # ===== Página 2 =====
             page2 = doc[1] if doc.page_count >= 2 else doc.new_page()
+            
             ok = insert_stamp_image(
                 page2,
                 SELO_IMG,
