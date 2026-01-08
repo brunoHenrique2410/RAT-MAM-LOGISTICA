@@ -453,7 +453,7 @@ def render():
             page2.insert_textbox(
                 rect_txt,
                 stamp_text,
-                fontsize=8,
+                fontsize=6,
                 fontname="helv",
                 align=0,
                 color=(0.2, 0.2, 0.2),
