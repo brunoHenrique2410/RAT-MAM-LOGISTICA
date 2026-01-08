@@ -428,7 +428,7 @@ def render():
             chamado = (ss.numero_chamado or "").strip() or "(sem chamado)"
             stamp_text = (
                 "Gerado automaticamente\n"
-                f"{now.strftime('%d/%m/%Y %H:%M')} | Chamado {chamado}"
+                f"{now.strftime('%d/%m/%Y %H:%M')}  Chamado {chamado}"
             )
             # ===== Página 2 =====
             page2 = doc[1] if doc.page_count >= 2 else doc.new_page()
