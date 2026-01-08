@@ -439,14 +439,17 @@ def render():
                 "Gerado automaticamente\n"
                 f"{now.strftime('%d/%m/%Y %H:%M')} • Chamado {chamado}"
             )
+
             r = page2.rect
-                # caixa no canto inferior direito (ajuste fino aqui)
-                rect_txt = fitz.Rect(
+
+            # caixa no canto inferior direito (ajuste fino aqui)
+            rect_txt = fitz.Rect(
                 r.width - 260,   # mais pra esquerda = aumenta esse número?
                 r.height - 70,   # mais pra cima = aumenta esse número?
                 r.width - 18,
                 r.height - 18
             )
+
             page2.insert_textbox(
                 rect_txt,
                 stamp_text,
@@ -456,16 +459,7 @@ def render():
                 color=(0.2, 0.2, 0.2),
                 overlay=True
             )
-            # texto do selo (sempre)
-            r = page2.rect
-            page2.insert_textbox(
-                fitz.Rect(r.width - 260, r.height - 70, r.width - 18, r.height - 18),
-                stamp_text,
-                fontsize=8,
-                fontname="helv",
-                align=0,
-                color=(0.2, 0.2, 0.2),
-            )
+
 
             # Equipamentos (colunas)
             eq_title = _first_hit(page2, ["EQUIPAMENTOS NO CLIENTE", "Equipamentos no Cliente"])
