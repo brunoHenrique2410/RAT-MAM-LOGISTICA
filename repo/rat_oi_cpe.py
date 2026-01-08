@@ -429,17 +429,18 @@ def render():
             stamp_text = (
                 "Gerado automaticamente\n"
                 f"{now.strftime('%d/%m/%Y %H:%M')} | Chamado {chamado}"
-                ok = False
-                if hasattr(pdf, "insert_stamp_image"):
-                    ok = pdf.insert_stamp_image(
-                        page2,
-                        SELO_IMG,
-                        where="bottom_right",
-                        width_cm=4.2,
-                        opacity=0.95
-                    )
-                else:
-                    st.error("insert_stamp_image NÃO existe em common/pdf.py (símbolo não exportado).")
+            )
+            ok = False
+             if hasattr(pdf, "insert_stamp_image"):
+                ok = pdf.insert_stamp_image(
+                    page2,
+                    SELO_IMG,
+                    where="bottom_right",
+                    width_cm=4.2,
+                    opacity=0.95
+                )
+            else:
+                st.error("insert_stamp_image NÃO existe em common/pdf.py (símbolo não exportado).")
 
 
             # texto do selo (sempre)
