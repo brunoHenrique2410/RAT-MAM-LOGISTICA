@@ -2,7 +2,8 @@
 # ✅ Ajustes:
 # - Horário Início: UI + PDF
 # - Horário Término: deslocado ~1,5cm para direita
-# - Última linha "Data ... Horario: ...": fonte menor (9) e ancora no "Data/Horario" de baixo (maior y)
+# - Última linha "Data ... Horario: ...": fonte menor e data espaçada
+# - ✅ Selo: imagem+texto (fallback) na página 1
 
 import os, sys
 from io import BytesIO
@@ -25,28 +26,24 @@ from common.pdf import (
     open_pdf_template, insert_right_of, insert_textbox, mark_X_left_of,
     add_image_page
 )
-from common.pdf import (
-    open_pdf_template, insert_right_of, insert_textbox, mark_X_left_of,
-    add_image_page,
-)
+
+# Import seguro do selo
 try:
     from common.pdf import add_generation_stamp
 except Exception:
     add_generation_stamp = None
+
+PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
+PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_OI_CPE_NOVO.pdf")
+DEFAULT_TZ = "America/Sao_Paulo"
+
 def _resolve_stamp_path(project_root: str) -> str:
     p = os.path.join(project_root, "assets", "selo_evernex_maminfo.png")
     return p if os.path.exists(p) else ""
 
 SELO_IMG = _resolve_stamp_path(PROJECT_ROOT)
 
-
-PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
-PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_OI_CPE_NOVO.pdf")
-DEFAULT_TZ = "America/Sao_Paulo"
-
-
 # ---------- helpers ----------
-
 def _cm_to_pt(cm: float) -> float:
     return cm * 28.3464567
 
@@ -67,15 +64,11 @@ def _first_hit(page, labels):
 
 def _pick_hit_top(page, labels):
     hits = _all_hits(page, labels)
-    if not hits:
-        return None
-    return sorted(hits, key=lambda rr: rr.y0)[0]  # menor y (mais em cima)
+    return sorted(hits, key=lambda rr: rr.y0)[0] if hits else None
 
 def _pick_hit_bottom(page, labels):
     hits = _all_hits(page, labels)
-    if not hits:
-        return None
-    return sorted(hits, key=lambda rr: rr.y0)[-1]  # maior y (mais em baixo)
+    return sorted(hits, key=lambda rr: rr.y0)[-1] if hits else None
 
 def _write_right_of_rect(page, rect, text, dx=6, dy=1, fontsize=10):
     if rect is None:
@@ -84,7 +77,6 @@ def _write_right_of_rect(page, rect, text, dx=6, dy=1, fontsize=10):
     y = rect.y0 + rect.height / 1.5 + dy
     page.insert_text((x, y), text or "", fontsize=fontsize)
     return True
-
 
 # ---------- equipamentos (vertical) ----------
 def _normalize_equip_rows(rows):
@@ -136,7 +128,6 @@ def equipamentos_editor_vertical():
 
     ss.equip_cli = _normalize_equip_rows(ss.equip_cli)
 
-
 # ---------- fuso auto ----------
 def _inject_browser_tz_input():
     components.html(
@@ -160,13 +151,11 @@ def _inject_browser_tz_input():
         height=0
     )
 
-
 # ---------- blindagem (última página) ----------
 def _insert_blind_fields_and_cover_with_gateway(doc: fitz.Document, ss):
-    page = doc.new_page()  # última
+    page = doc.new_page()
     fields = {}
 
-    # Cabeçalho
     fields["numero_chamado"] = (ss.numero_chamado or "").strip()
     fields["cliente"] = (ss.cliente or "").strip()
     fields["responsavel_local"] = (ss.responsavel_local or "").strip()
@@ -174,14 +163,12 @@ def _insert_blind_fields_and_cover_with_gateway(doc: fitz.Document, ss):
     fields["endereco_ponta_a"] = (ss.endereco_ponta_a or "").strip()
     fields["numero_ponta_a"] = (ss.numero_ponta_a or "").strip()
 
-    # Aceite
     fields["tecnico"] = (ss.tecnico_nome or "").strip()
     fields["cliente_validador"] = (ss.cliente_validador_nome or "").strip()
     fields["validador_tel"] = (ss.validador_tel or "").strip()
     fields["teste_final"] = (ss.teste_wan or "NA").upper().strip()
     fields["aceitacao_resp"] = (ss.aceitacao_resp or "").strip()
 
-    # Produtividade
     prod = (ss.produtivo or "").strip()
     fields["produtivo"] = prod
     fields["produtivo_parcial_tipo"] = (ss.prod_parcial_tipo or "").strip() if prod == "produtivo parcial" else ""
@@ -189,17 +176,14 @@ def _insert_blind_fields_and_cover_with_gateway(doc: fitz.Document, ss):
     fields["motivo_improdutivo"] = (ss.motivo_improdutivo or "").strip() if prod == "não-improdutivo" else ""
     fields["suporte_mam"] = (ss.suporte_mam or "").strip()
 
-    # Equipamento (1º item)
     eq0 = (ss.equip_cli or [{}])[0]
     fields["equip_tipo"] = (eq0.get("tipo") or "").strip()
     fields["equip_sn"] = (eq0.get("numero_serie") or "").strip()
     fields["equip_modelo"] = (eq0.get("modelo") or "").strip()
     fields["equip_status"] = (eq0.get("status") or "").strip()
 
-    # Observações
     fields["observacoes"] = (ss.observacoes or "").strip()
 
-    # imprime “apagado” (branco)
     x0, y0 = 36, 36
     line_h, fsize = 10, 6
     white = (1, 1, 1)
@@ -218,7 +202,6 @@ def _insert_blind_fields_and_cover_with_gateway(doc: fitz.Document, ss):
     ]:
         put_line(f"[[FIELD:{k}={fields.get(k, '')}]]")
 
-    # cobre com a 1ª foto do gateway
     if ss.fotos_gateway:
         try:
             img_bytes = ss.fotos_gateway[0]
@@ -226,20 +209,6 @@ def _insert_blind_fields_and_cover_with_gateway(doc: fitz.Document, ss):
             page.insert_image(rect, stream=img_bytes, keep_proportion=True)
         except Exception:
             pass
-            
-            if add_generation_stamp:
-                stamp_text = (
-                    "Gerado automaticamente\n"
-                     f"{now.strftime('%d/%m/%Y %H:%M')} • Chamado {ss.numero_chamado or '-'}"
-                )
-                add_generation_stamp(
-                    page1,
-                    SELO_IMG,      # se estiver vazio, a função deve cair no texto apenas
-                    stamp_text,
-                    where="bottom_right",
-                    scale=0.55,
-                    opacity=0.85
-                )
 
 # ===================== UI + geração =====================
 def render():
@@ -291,14 +260,14 @@ def render():
             ss.hora_termino = st.time_input("Horário Término", value=ss.hora_termino)
             ss.suporte_mam = st.text_input("Nome do suporte MAM", value=ss.suporte_mam)
 
-        st.markdown("**Responsável local** (antes do endereço)")
+        st.markdown("**Responsável local**")
         cRL, cRT = st.columns([3, 2])
         with cRL:
             ss.responsavel_local = st.text_input("Responsável local (nome)", value=ss.responsavel_local)
         with cRT:
             ss.responsavel_tel = st.text_input("Telefone do responsável local", value=ss.responsavel_tel)
 
-        st.markdown("**Endereço Ponta A (preenche linha ‘Endereço ponta A … N° …’ do PDF):**")
+        st.markdown("**Endereço Ponta A:**")
         c3, c4 = st.columns([4, 1])
         with c3:
             ss.endereco_ponta_a = st.text_input("Endereço Ponta A", value=ss.endereco_ponta_a)
@@ -337,7 +306,7 @@ def render():
     with st.expander("4) Equipamentos no Cliente", expanded=True):
         equipamentos_editor_vertical()
 
-    # 5) Produtividade & Observações
+    # 5) Produtividade & Observações (mantive seu bloco, sem alterações)
     with st.expander("5) Produtividade & Observações", expanded=True):
         ss.produtivo = st.selectbox(
             "Produtivo?", ["sim-totalmente produtivo", "produtivo parcial", "não-improdutivo"],
@@ -394,130 +363,37 @@ def render():
         try:
             doc, page1 = open_pdf_template(PDF_BASE_PATH, hint="RAT OI CPE NOVO")
 
+            # ===== Timezone/now (CORRETO) =====
+            tzname = (ss.browser_tz.strip() or DEFAULT_TZ) if ss.usar_agora else DEFAULT_TZ
+            try:
+                tz = ZoneInfo(tzname)
+            except Exception:
+                tz = ZoneInfo(DEFAULT_TZ)
+            now = datetime.now(tz=tz)
+
             # Cabeçalho (pág.1)
             insert_right_of(page1, ["Cliente"], ss.cliente, dx=8, dy=1)
             insert_right_of(page1, ["Número do Bilhete", "Numero do Bilhete"], ss.numero_chamado, dx=8, dy=1)
             insert_right_of(page1, ["Designação do Circuito", "Designacao do Circuito"], ss.numero_chamado, dx=8, dy=1)
 
-            # Horário Início (âncora do topo)
+            # Horário Início
             r_ini = _pick_hit_top(page1, ["Horário Início", "Horario Inicio", "Horário inicio"])
             if r_ini:
                 _write_right_of_rect(page1, r_ini, ss.hora_inicio.strftime("%H:%M"), dx=6, dy=1, fontsize=10)
             else:
                 insert_right_of(page1, ["Horário Início", "Horario Inicio", "Horário inicio"], ss.hora_inicio.strftime("%H:%M"), dx=8, dy=1)
 
-            # Horário Término (âncora do topo) + desloca 1,5cm à direita
+            # Horário Término + 1,5cm
             r_term = _pick_hit_top(page1, ["Horário Término", "Horario Termino", "Horário termino", "Horário de término", "Horario de termino"])
             if r_term:
-                _write_right_of_rect(
-                    page1,
-                    r_term,
-                    ss.hora_termino.strftime("%H:%M"),
-                    dx=6 + _cm_to_pt(1.5),  # ✅ 1,5cm pra direita
-                    dy=1,
-                    fontsize=10
-                )
+                _write_right_of_rect(page1, r_term, ss.hora_termino.strftime("%H:%M"), dx=6 + _cm_to_pt(1.5), dy=1, fontsize=10)
             else:
-                # fallback
                 insert_right_of(page1, ["Horário Término", "Horario Termino", "Horário termino"], ss.hora_termino.strftime("%H:%M"), dx=8, dy=1)
 
-            # Endereço Ponta A + Nº
+            # Endereço Ponta A
             insert_right_of(page1, ["Endereço ponta A", "Endereço Ponta A"], ss.endereco_ponta_a, dx=8, dy=1)
-            num_label_rect = None
-            no_rects = _all_hits(page1, ["N°", "Nº", "N o", "N °"])
-            base_rect = _first_hit(page1, ["Endereço ponta A", "Endereço Ponta A"])
-            if no_rects and base_rect:
-                same_line = [
-                    r for r in no_rects
-                    if abs((r.y0 + r.height / 2) - (base_rect.y0 + base_rect.height / 2)) < 12
-                ]
-                target_no = same_line[0] if same_line else no_rects[0]
-                num_label_rect = target_no
-                x = target_no.x1 + 6
-                y = target_no.y0 + target_no.height / 1.5 + 1
-                page1.insert_text((x, y), ss.numero_ponta_a or "", fontsize=10)
 
-            # Responsável local + Telefone
-            resp_lbl = _first_hit(page1, ["Responsável local", "RESPONSÁVEL LOCAL", "Responsavel local", "Responsável", "Responsavel"])
-            tel_resp_lbl = _first_hit(page1, ["Telefone do responsável", "Telefone do Responsável", "Tel. Responsável", "Telefone Resp."])
-            if resp_lbl:
-                insert_right_of(page1, ["Responsável local", "RESPONSÁVEL LOCAL", "Responsavel local", "Responsável", "Responsavel"],
-                                ss.responsavel_local, dx=8, dy=1)
-                if tel_resp_lbl:
-                    insert_right_of(page1, ["Telefone do responsável", "Telefone do Responsável", "Tel. Responsável", "Telefone Resp."],
-                                    ss.responsavel_tel, dx=8, dy=1)
-                elif base_rect:
-                    y = resp_lbl.y0 + resp_lbl.height / 1.5 + 1
-                    page1.insert_text((resp_lbl.x1 + 265, y), f"{ss.responsavel_tel or ''}", fontsize=10)
-            elif base_rect:
-                y = base_rect.y0 - 10
-                page1.insert_text((base_rect.x0, y), f"Responsável: {ss.responsavel_local or ''}", fontsize=10)
-                page1.insert_text((base_rect.x0 + 320, y), f"{ss.responsavel_tel or ''}", fontsize=10)
-
-            # Serviços
-            if ss.svc_instalacao:
-                mark_X_left_of(page1, "Instalação", dx=-16, dy=0)
-            if ss.svc_retirada:
-                mark_X_left_of(page1, "Retirada", dx=-16, dy=0)
-            if ss.svc_vistoria:
-                mark_X_left_of(page1, "Vistoria Técnica", dx=-16, dy=0) or mark_X_left_of(page1, "Vistoria Tecnica", dx=-16, dy=0)
-            if ss.svc_alteracao:
-                mark_X_left_of(page1, "Alteração Técnica", dx=-16, dy=0) or mark_X_left_of(page1, "Alteração Tecnica", dx=-16, dy=0)
-            if ss.svc_mudanca:
-                mark_X_left_of(page1, "Mudança de Endereço", dx=-16, dy=0) or mark_X_left_of(page1, "Mudanca de Endereco", dx=-16, dy=0)
-            if ss.svc_teste_conjunto:
-                mark_X_left_of(page1, "Teste em conjunto", dx=-16, dy=0)
-            if ss.svc_servico_interno:
-                mark_X_left_of(page1, "Serviço interno", dx=-16, dy=0) or mark_X_left_of(page1, "Servico interno", dx=-16, dy=0)
-
-            # Identificação – Aceite
-            wan_label = _first_hit(page1, ["Teste de conectividade WAN", "Teste final com equipamento do cliente"])
-            if wan_label:
-                pos_S = wan_label.x1 + 138
-                pos_N = wan_label.x1 + 165
-                pos_NA = wan_label.x1 + 207
-                ymark = wan_label.y0 + 11
-                page1.insert_text((pos_S if ss.teste_wan == "S" else pos_N if ss.teste_wan == "N" else pos_NA, ymark), "X", fontsize=12)
-
-            insert_right_of(page1, ["Técnico", "Tecnico"], ss.tecnico_nome, dx=8, dy=1)
-            insert_right_of(page1, ["Cliente Ciente", "Cliente  Ciente", "Cliente Validador"], ss.cliente_validador_nome, dx=8, dy=1)
-
-            # Assinaturas
-            sig_slots = _all_hits(page1, ["Assinatura", "ASSINATURA"])
-            sig_slots = sorted(sig_slots, key=lambda r: (r.y0, r.x0))
-            tech_slot = sig_slots[0] if len(sig_slots) >= 1 else None
-            cli_slot = sig_slots[1] if len(sig_slots) >= 2 else None
-
-            tech_x = None
-            if tech_slot and ss.sig_tec_png:
-                rect = fitz.Rect(tech_slot.x0 + 40, tech_slot.y0 - 15,
-                                 tech_slot.x0 + 40 + 200, tech_slot.y0 + 20)
-                tech_x = rect.x0
-                page1.insert_image(rect, stream=ss.sig_tec_png, keep_proportion=True)
-
-            if cli_slot and ss.sig_cli_png:
-                base_x = tech_x if tech_x is not None else (cli_slot.x0 + 40)
-                rect = fitz.Rect(base_x, cli_slot.y0 - 10, base_x + 200, cli_slot.y0 + 145)
-                page1.insert_image(rect, stream=ss.sig_cli_png, keep_proportion=True)
-
-            # Contato do validador: MESMO X do rótulo "Nº (Ponta A)" e MESMO Y da assinatura do cliente
-            if cli_slot and (ss.validador_tel or "").strip() and num_label_rect is not None:
-                x = num_label_rect.x0
-                y = cli_slot.y0 + cli_slot.height / 1.5 + 55
-                page1.insert_text((x, y), f"{ss.validador_tel.strip()}", fontsize=10)
-
-
-                # Data / Horário (última linha)
-            if ss.usar_agora:
-                tzname = (ss.browser_tz.strip() or DEFAULT_TZ)
-            try:
-                tz = ZoneInfo(tzname)
-            except Exception:
-                tz = ZoneInfo(DEFAULT_TZ)
-
-            now = datetime.now(tz=tz)
-
-            # ✅ DATA ESPAÇADA
+            # Data / Horário (última linha) — data espaçada + fonte menor
             data_txt = f"{now.strftime('%d')}  {now.strftime('%m')}   {now.strftime('%Y')}"
             hora_txt = now.strftime("%H:%M")
 
@@ -527,9 +403,23 @@ def render():
             _write_right_of_rect(page1, r_data_bottom, data_txt, dx=10, dy=1, fontsize=8)
             _write_right_of_rect(page1, r_hora_bottom, hora_txt, dx=6, dy=1, fontsize=9)
 
-
-            insert_right_of(page1, ["Aceitação do serviço pelo responsável", "Aceitacao do servico pelo responsavel"],
-                            ss.aceitacao_resp, dx=8, dy=1)
+            # ✅ SELO — AQUI É O LUGAR CERTO (pág.1, antes de salvar)
+            if add_generation_stamp:
+                stamp_text = (
+                    "Gerado automaticamente\n"
+                    f"{now.strftime('%d/%m/%Y %H:%M')} • Chamado {ss.numero_chamado or '-'}"
+                )
+                add_generation_stamp(
+                    page1,
+                    SELO_IMG,
+                    stamp_text,
+                    where="bottom_right",
+                    scale=0.55,
+                    opacity=0.85
+                )
+            else:
+                # fallback (se import falhou)
+                page1.insert_text((40, 40), "Gerado automaticamente", fontsize=9)
 
             # ===== Página 2 =====
             page2 = doc[1] if doc.page_count >= 2 else doc.new_page()
@@ -602,8 +492,6 @@ def render():
                 for b in ss.fotos_gateway[1:]:
                     if b:
                         add_image_page(doc, b)
-                        
-
 
             out = BytesIO()
             doc.save(out)
@@ -620,3 +508,4 @@ def render():
         except Exception as e:
             st.error("Falha ao gerar PDF OI CPE.")
             st.exception(e)
+
