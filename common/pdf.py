@@ -3,9 +3,10 @@ from io import BytesIO
 import os, glob
 import fitz
 import streamlit as st
-from PIL import Image  # necessário para add_image_page robusto
+from PIL import Image
 
 CM = 28.3465  # pontos por cm
+
 
 def insert_stamp_image(
     page: fitz.Page,
@@ -17,28 +18,21 @@ def insert_stamp_image(
     opacity: float = 0.95,
 ):
     """
-    Insere um PNG como 'foto normal' controlando tamanho por retângulo (cm).
-    Muito robusto no Streamlit Cloud.
+    Insere um PNG como "foto normal" (via stream bytes) com tamanho controlado.
     """
     if not image_path or not os.path.exists(image_path):
         return False
 
-    # lê bytes do PNG
     with open(image_path, "rb") as f:
         img_bytes = f.read()
 
-    # pega dimensões pelo PIL (pra manter proporção perfeita)
-    from PIL import Image
-    from io import BytesIO
     im = Image.open(BytesIO(img_bytes))
     W, H = im.size
 
-    # converte largura em pontos e calcula altura proporcional
     w = width_cm * 28.3464567
     h = w * (H / W)
 
     r = page.rect
-
     if where == "bottom_right":
         rect = fitz.Rect(r.width - w - margin_x, r.height - h - margin_y, r.width - margin_x, r.height - margin_y)
     elif where == "bottom_left":
@@ -50,7 +44,6 @@ def insert_stamp_image(
 
     page.insert_image(rect, stream=img_bytes, keep_proportion=True, overlay=True, opacity=opacity)
     return True
-
 
 
 def _find_template_by_hint(hint: str, base_dir: str) -> str | None:
@@ -123,7 +116,6 @@ def insert_textbox(page, label, text, width=540, y_offset=20, fontsize=10, align
 
 
 def mark_X_left_of(page, label_text, dx=-14, dy=0, occurrence=1, near_text=None, fontsize=12):
-    _ = near_text
     r = search_once(page, label_text, occurrence=occurrence)
     if not r:
         return
@@ -132,23 +124,9 @@ def mark_X_left_of(page, label_text, dx=-14, dy=0, occurrence=1, near_text=None,
     page.insert_text((x, y), "X", fontsize=fontsize)
 
 
-def insert_signature_png(page, labels, sig_png_bytes, rel_rect, occurrence=1):
-    if not sig_png_bytes:
-        return
-    r = search_once(page, labels, occurrence=occurrence)
-    if not r:
-        return
-    rect = fitz.Rect(
-        r.x0 + rel_rect[0], r.y1 + rel_rect[1],
-        r.x0 + rel_rect[2], r.y1 + rel_rect[3]
-    )
-    page.insert_image(rect, stream=sig_png_bytes, keep_proportion=True)
-
-
 def add_image_page(doc, img_bytes, margin=36):
     if not img_bytes:
         return
-
     try:
         pil = Image.open(BytesIO(img_bytes))
         if pil.mode not in ("RGB", "L"):
@@ -161,7 +139,6 @@ def add_image_page(doc, img_bytes, margin=36):
 
     page = doc.new_page()
     w, h = page.rect.width, page.rect.height
-
     max_w, max_h = w - 2 * margin, h - 2 * margin
     if max_w <= 0 or max_h <= 0:
         max_w, max_h = w, h
