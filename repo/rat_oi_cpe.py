@@ -44,8 +44,8 @@ def _resolve_stamp_path() -> str:
     p = os.path.join(root, "assets", "selo_evernex_maminfo.png")
     return p if os.path.exists(p) else ""
 
-SELO_IMG = _resolve_stamp_path()
-st.caption(f"DEBUG selo: {SELO_IMG} | exists={os.path.exists(SELO_IMG)}")
+    SELO_IMG = _resolve_stamp_path()
+    st.caption(f"DEBUG selo: {SELO_IMG} | exists={os.path.exists(SELO_IMG)}")
 
 
 # ---------- helpers ----------
