@@ -1,99 +1,88 @@
 # repo/rat_unificado.py
+"""
+RAT MAMINFO UNIFICADA - Lado Python (estado + gatilho de geração)
+
+- Define valores padrão em st.session_state
+- Chama o layout em ui_unificado.render_layout()
+"""
+
 import os
 import sys
-from datetime import datetime
+from datetime import date, time
 
 import streamlit as st
 
-# Ajuste de PATH para achar 'common'
-THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(THIS_DIR)
+# Garante que a pasta raiz (onde fica common/) está no sys.path
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))      # .../repo
+PROJECT_ROOT = os.path.dirname(THIS_DIR)                   # raiz do projeto
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from common.state import init_defaults
-from common import pdf as pdf_utils  # para depois usar open_pdf_template etc.
-import ui_unificado  # layout visual
-
-
-PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
-PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_MAM_UNIFICADA_VF.pdf")
+import ui_unificado  # arquivo de UI em repo/ui_unificado.py
 
 
 def _init_rat_defaults():
     """
-    Inicializa todos os campos usados na RAT unificada.
+    Inicializa todos os campos da RAT Unificada no session_state.
+    Assim evitamos erro de default em multiselect / etc.
     """
+
     init_defaults({
-        # === Identificação do chamado / relatório ===
-        "numero_relatorio": "",
-        "numero_chamado": "",
+        # ========= 1) Dados do Relatório & Local de Atendimento =========
+        "rel_numero": "",
+        "chamado_numero": "",
         "operadora_contrato": "",
-        "cliente_nome": "",
-        "codigo_ul_circuito": "",
-        "localidade": "",
-
-        # === Equipe técnica ===
-        "analista_suporte": "",
-        "analista_validador": "",
-
-        # === Atendimento / operação ===
-        "tipo_atendimento": [],  # checklist (lista de strings)
+        "cliente_razao": "",
+        "contato": "",
+        "endereco_completo": "",
+        "telefone_email": "",
         "distancia_km": 0.0,
-        "testes_executados": [],  # checklist (lista de strings)
-        "resumo_atividade": "",
-        "observacoes_gerais": "",
+        "data_atendimento": date.today(),
+        "hora_inicio": time(8, 0),
+        "hora_termino": time(10, 0),
 
-        # === Materiais / equipamentos ===
+        # ========= 2) Atendimento & Testes =========
+        "analista_suporte": "",
+        "analista_integradora": "",
+        "analista_validador": "",
+        "tipo_atendimento": [],     # multiselect
+        "motivo_chamado": "",
+        "checklist_tecnico_ok": [],  # multiselect de itens OK
+
+        # ========= 3) Materiais & Equipamentos =========
         "material_utilizado": "",
-        "equipamentos_retirados": "",
-        "equipamentos_instalados": "",
+        "equip_instalados": "",
+        "equip_retirados": "",
 
-        # === Assinaturas ===
-        "tecnico_nome": "",
-        "tecnico_telefone": "",
-        "tecnico_documento": "",
-        "cliente_ass_nome": "",
-        "cliente_ass_telefone": "",
-        "cliente_ass_documento": "",
+        # ========= 4) Observações =========
+        "testes_realizados": [],    # multiselect (Autenticação / Navegação / etc.)
+        "descricao_atendimento": "",
+        "observacoes_pendencias": "",
 
-        # === Fluxo de tela ===
-        "rat_step": 1,          # 1 = preencher, 2 = revisar/gerar
+        # ========= 5) Aceite & Assinaturas =========
+        # Técnico
+        "tec_nome": "",
+        "tec_documento": "",
+        "tec_telefone": "",
+        "tec_data": date.today(),
+        "tec_hora": time(10, 0),
+
+        # Cliente
+        "cli_nome": "",
+        "cli_documento": "",
+        "cli_telefone": "",
+        "cli_data": date.today(),
+        "cli_hora": time(10, 30),
+
+        # Assinaturas (common.ui.assinatura_dupla_png usa esses campos)
+        "sig_tec_png": None,
+        "sig_cli_png": None,
+
+        # Controle de steps e geração
+        "step_unificado": 1,
         "trigger_generate": False,
     })
-
-
-def generate_pdf_unificado(ss: st.session_state):
-    """
-    ⚠️ STUB por enquanto.
-    Aqui vamos mapear os campos da RAT unificada para o template
-    RAT_MAM_UNIFICADA_VF.pdf usando common.pdf / PyMuPDF.
-
-    Por enquanto, só mostra uma mensagem.
-    """
-    st.warning(
-        "Gatilho de geração de PDF recebido. "
-        "A etapa de mapeamento para o template 'RAT_MAM_UNIFICADA_VF.pdf' "
-        "ainda será implementada."
-    )
-
-    # Exemplo de como será no futuro (comentado):
-    # try:
-    #     doc, page1 = pdf_utils.open_pdf_template(PDF_BASE_PATH, hint="RAT_MAM_UNIFICADA")
-    #     # TODO: usar pdf_utils.insert_right_of, insert_textbox, etc.
-    #     #       para preencher o template com os campos de ss.
-    #     out = BytesIO()
-    #     doc.save(out)
-    #     doc.close()
-    #     st.download_button(
-    #         "⬇️ Baixar RAT Unificada",
-    #         data=out.getvalue(),
-    #         file_name=f"RAT_UNIFICADA_{ss.numero_chamado or 'sem_chamado'}.pdf",
-    #         mime="application/pdf",
-    #     )
-    # except Exception as e:
-    #     st.error("Falha ao gerar PDF da RAT Unificada.")
-    #     st.exception(e)
 
 
 def render():
@@ -101,10 +90,12 @@ def render():
     Função principal chamada pelo app.py
     """
     _init_rat_defaults()
-    ui_unificado.render_layout()  # desenha layout + controla step / botões
+
+    ui_unificado.render_layout()  # desenha layout + controla step / botão
 
     ss = st.session_state
     if ss.get("trigger_generate"):
-        # Reseta o gatilho e chama a geração (stub por enquanto)
+        # Aqui no futuro você chama a função de gerar PDF usando RAT_MAM_UNIFICADA_VF.pdf
+        st.success("✅ RAT pronta para geração (a lógica de PDF entra aqui depois).")
+        # Reseta o gatilho pra não ficar gerando em loop
         ss.trigger_generate = False
-        generate_pdf_unificado(ss)
