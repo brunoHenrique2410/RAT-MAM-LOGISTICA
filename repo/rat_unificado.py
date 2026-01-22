@@ -13,7 +13,7 @@ import streamlit as st
 
 from common.state import init_defaults
 from common.pdf import open_pdf_template, add_image_page  # add_image_page p/ fotos depois
-from ui_rat_unificada import render_layout
+from ui_rat_unificado import render_layout
 
 # Paths do projeto
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
