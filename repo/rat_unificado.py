@@ -108,4 +108,3 @@ def render():
         # Reseta o gatilho e chama a geração (stub por enquanto)
         ss.trigger_generate = False
         generate_pdf_unificado(ss)
-s
