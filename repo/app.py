@@ -1,35 +1,32 @@
+# repo/rat_mam_unificada.py
 import streamlit as st
-import ui_unificado
-from rat_unificado import gerar_pdf
+from datetime import date, time
 from common.state import init_defaults
+from ui_rat_unificada import render_layout
+from common.pdf import open_pdf_template  # depois você usa para gerar o PDF
 
-st.set_page_config(page_title="RAT MAM – Unificada", layout="wide")
+def render():
+    init_defaults({
+        "data_atendimento": date.today(),
+        "hora_inicio": time(8, 0),
+        "hora_termino": time(10, 0),
+        "cliente": "",
+        "numero_chamado": "",
+        "analista_mam": "",
+        # ... (resto dos campos que o layout usa, se quiser default)
+    })
 
-init_defaults({
-    "cliente": "",
-    "numero_chamado": "",
-    "analista": "",
-    "cnpj": "",
-    "contato_nome": "",
-    "contato_tel": "",
-    "endereco": "",
-    "cidade_uf": "",
-})
+    render_layout()   # desenha só a UI
 
-ss = st.session_state
+    st.divider()
+    if st.button("🧾 Gerar RAT Unificada (PDF)"):
+        st.warning("Aqui entra a lógica de geração do PDF usando o RAT_MAM_UNIFICADA_VF.pdf.")
+        # pdf_bytes = gerar_pdf_unificado(st.session_state)
+        # st.download_button(...)
 
-tabs = st.tabs(["Identificação", "Operacional", "Aceite", "Página 2", "Fotos"])
 
-with tabs[0]:
-    ui_unificado.page_identificacao(ss)
-
-st.divider()
-
-if st.button("Gerar RAT MAM Unificada (PDF)"):
-    pdf_bytes = gerar_pdf(ss)
-    st.download_button(
-        "Baixar PDF",
-        data=pdf_bytes,
-        file_name=f"RAT_MAM_UNIFICADA_{ss.numero_chamado or 'sem_num'}.pdf",
-        mime="application/pdf"
-    )
+# e no app.py:
+# import rat_mam_unificada
+# ...
+# if modo == "RAT MAM Unificada":
+#     rat_mam_unificada.render()
