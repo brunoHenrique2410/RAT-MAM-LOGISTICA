@@ -1,29 +1,28 @@
-# repo/ui_rat_unificada.py
-# Layout da RAT MAM UNIFICADA
-# - modo escuro
-# - largura "quase" full
-# - logo Evernex no topo
-# - abas por seção
-# - cards bonitinhos
-
+# repo/ui_unificado.py
 import os
+import sys
 import streamlit as st
 
-# Descobre paths relativos ao projeto
+# Ajuste de PATH (se precisar de coisas do projeto)
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(THIS_DIR)
-ASSETS_DIR = os.path.join(PROJECT_ROOT, "assets")
-
-# candidatos de logo (ajuste os nomes se usar outro arquivo)
-LOGO_CANDIDATOS = [
-    os.path.join(ASSETS_DIR, "logo_evernex.png"),
-    os.path.join(ASSETS_DIR, "logo_evernex_maminfo.png"),
-    os.path.join(ASSETS_DIR, "selo_evernex_maminfo.png"),
-]
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 
-def _get_logo_path() -> str:
-    for p in LOGO_CANDIDATOS:
+# ---------- helpers de layout / tema ----------
+
+def get_logo_path() -> str:
+    """
+    Tenta resolver o caminho do logo da Evernex.
+    Ex: <project_root>/assets/evernex_logo.png
+    """
+    root = PROJECT_ROOT
+    candidates = [
+        os.path.join(root, "assets", "evernex_logo.png"),
+        os.path.join(root, "assets", "logo_evernex.png"),
+    ]
+    for p in candidates:
         if os.path.exists(p):
             return p
     return ""
@@ -31,94 +30,52 @@ def _get_logo_path() -> str:
 
 def apply_dark_full_layout():
     """
-    CSS pra:
-      - fundo escuro
-      - largura quase total
-      - cards com sombra
-      - inputs escuros
+    Injeta CSS para modo escuro custom + largura full.
     """
     st.markdown(
         """
         <style>
-        /* fundo principal */
-        .main {
-            background-color: #050608;
+        html, body, [data-testid="stAppViewContainer"] {
+            background-color: #0b0f17;
         }
-
-        /* largura quase total */
-        .block-container {
-            padding-top: 1.5rem;
-            padding-bottom: 3rem;
-            padding-left: 2rem;
-            padding-right: 2rem;
-            max-width: 98%;
+        [data-testid="stSidebar"] {
+            background-color: #05070c;
         }
-
-        /* títulos */
-        h1, h2, h3, h4, h5, h6 {
-            color: #f5f5f7 !important;
-        }
-
-        /* texto geral */
-        .stMarkdown, label, .stTextInput label, .stSelectbox label, .stDateInput label {
-            color: #e5e5ea !important;
-        }
-
-        /* inputs escuros */
-        .stTextInput > div > div > input,
-        .stDateInput > div > div > input,
-        .stTimeInput > div > div > input,
-        .stNumberInput input,
-        .stSelectbox > div > div,
-        textarea {
-            background-color: #111216 !important;
-            color: #f5f5f7 !important;
-        }
-
-        /* borda/hover inputs */
-        .stTextInput > div > div,
-        .stDateInput > div > div,
-        .stTimeInput > div > div,
-        .stSelectbox > div > div {
-            border-radius: 10px;
-            border: 1px solid #262738;
-        }
-
-        /* cards customizados */
-        .rat-card {
-            background: #111216;
+        .ever-card {
+            background: #151b26;
             border-radius: 14px;
-            padding: 1.1rem 1.2rem;
-            border: 1px solid #262738;
-            box-shadow: 0 12px 30px rgba(0,0,0,0.45);
-            margin-bottom: 1.2rem;
+            padding: 18px 20px;
+            border: 1px solid #273044;
         }
-
-        .rat-section-title {
+        .ever-section-title {
+            font-weight: 600;
             font-size: 1.0rem;
-            font-weight: 600;
-            color: #ffffff;
-            margin-bottom: 0.4rem;
+            color: #f3f4f6;
+            margin-bottom: 6px;
         }
-
-        .rat-section-sub {
-            font-size: 0.78rem;
-            color: #a1a1b3;
-            margin-bottom: 0.8rem;
+        .ever-section-subtitle {
+            font-size: 0.82rem;
+            color: #9ca3af;
+            margin-bottom: 8px;
         }
-
-        /* botão principal */
-        .stButton>button {
+        .ever-tag-pill {
+            display: inline-block;
+            padding: 2px 10px;
             border-radius: 999px;
-            padding: 0.5rem 1.4rem;
-            border: 1px solid #3b82f6;
-            background: linear-gradient(90deg, #2563eb, #1d4ed8);
-            color: #f9fafb;
-            font-weight: 600;
+            font-size: 0.72rem;
+            background: #1f2937;
+            color: #9ca3af;
+            margin-right: 6px;
         }
-
-        .stButton>button:hover {
-            filter: brightness(1.1);
+        .ever-header-title {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #e5e7eb;
+            margin-bottom: 2px;
+        }
+        .ever-header-subtitle {
+            font-size: 0.85rem;
+            color: #9ca3af;
         }
         </style>
         """,
@@ -127,245 +84,263 @@ def apply_dark_full_layout():
 
 
 def header_bar():
-    """Barra do topo com logo Evernex + título."""
-    logo_path = _get_logo_path()
-
+    """
+    Cabeçalho superior: logo + título RAT.
+    """
+    logo_path = get_logo_path()
     col_logo, col_title = st.columns([1, 4])
     with col_logo:
         if logo_path:
-            st.image(logo_path, use_column_width=True)
+            # Sem use_container_width para evitar erro na sua versão
+            st.image(logo_path)
         else:
             st.markdown("### Evernex")
-
     with col_title:
+        st.markdown('<div class="ever-header-title">RAT MAM – Unificada</div>', unsafe_allow_html=True)
         st.markdown(
-            """
-            <div style="padding-left:0.5rem; padding-top:0.2rem;">
-              <h1 style="margin-bottom:0.1rem;">RAT MAM – Unificada</h1>
-              <p style="color:#a1a1b3; font-size:0.9rem; margin-top:0;">
-                Registro de Atendimento Técnico com fluxo unificado de identificação, operação e aceite.
-              </p>
-            </div>
-            """,
+            '<div class="ever-header-subtitle">Registro de Atendimento Técnico • Layout unificado Evernex/MAMINFO</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<span class="ever-tag-pill">Modo escuro</span>'
+            '<span class="ever-tag-pill">Layout full</span>',
             unsafe_allow_html=True,
         )
 
 
-# ================== SEÇÕES ==================
+# ---------- helpers de campos ----------
+
+def _text_input(label, key, cols=None, placeholder=""):
+    """
+    Helper para text_input com tema escuro.
+    """
+    if cols is None:
+        return st.text_input(label, key=key, placeholder=placeholder)
+    else:
+        with cols:
+            return st.text_input(label, key=key, placeholder=placeholder)
 
 
-def sec_identificacao(ss):
-    st.markdown('<div class="rat-card">', unsafe_allow_html=True)
-    st.markdown('<div class="rat-section-title">1) Identificação do Atendimento</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="rat-section-sub">Dados gerais do chamado, cliente e responsável.</div>',
-        unsafe_allow_html=True,
-    )
-
-    c1, c2, c3 = st.columns([1.2, 1.2, 1])
-    with c1:
-        ss.data_atendimento = st.date_input(
-            "Data do atendimento",
-            value=ss.get("data_atendimento", None),
-        )
-        ss.hora_inicio = st.time_input(
-            "Horário início",
-            value=ss.get("hora_inicio", None),
-        )
-    with c2:
-        ss.numero_chamado = st.text_input(
-            "Número do Chamado",
-            value=ss.get("numero_chamado", ""),
-        )
-        ss.hora_termino = st.time_input(
-            "Horário término",
-            value=ss.get("hora_termino", None),
-        )
-    with c3:
-        ss.analista_mam = st.text_input(
-            "Analista MAMINFO",
-            value=ss.get("analista_mam", ""),
-        )
-        ss.tipo_atendimento = st.text_input(
-            "Tipo de atendimento",
-            value=ss.get("tipo_atendimento", ""),
-        )
-
-    st.markdown("---")
-
-    c4, c5 = st.columns([2.5, 1.5])
-    with c4:
-        ss.cliente = st.text_input("Cliente / Razão Social", value=ss.get("cliente", ""))
-        ss.cnpj = st.text_input("CNPJ / Identificação", value=ss.get("cnpj", ""))
-        ss.endereco = st.text_input("Endereço", value=ss.get("endereco", ""))
-        ss.cidade_uf = st.text_input("Cidade / UF", value=ss.get("cidade_uf", ""))
-    with c5:
-        ss.contato_local = st.text_input("Contato local (nome)", value=ss.get("contato_local", ""))
-        ss.telefone_local = st.text_input("Telefone do contato", value=ss.get("telefone_local", ""))
-        ss.email_local = st.text_input("E-mail do contato (opcional)", value=ss.get("email_local", ""))
-
-    st.markdown("</div>", unsafe_allow_html=True)
+def _number_input(label, key, min_value=0.0, max_value=100000.0, step=0.1, cols=None):
+    if cols is None:
+        return st.number_input(label, key=key, min_value=min_value, max_value=max_value, step=step)
+    else:
+        with cols:
+            return st.number_input(label, key=key, min_value=min_value, max_value=max_value, step=step)
 
 
-def sec_dados_operacionais(ss):
-    st.markdown('<div class="rat-card">', unsafe_allow_html=True)
-    st.markdown('<div class="rat-section-title">2) Dados Operacionais</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="rat-section-sub">Informações técnicas do local, link e equipamentos.</div>',
-        unsafe_allow_html=True,
-    )
-
-    c1, c2 = st.columns(2)
-    with c1:
-        ss.site_id = st.text_input("ID / Código do Site", value=ss.get("site_id", ""))
-        ss.operadora = st.text_input("Operadora / Cliente final", value=ss.get("operadora", ""))
-        ss.tipo_link = st.text_input("Tipo de link (ex.: MPLS, Internet, 4G)", value=ss.get("tipo_link", ""))
-
-    with c2:
-        ss.endereco_ip = st.text_input("Endereço IP / Faixa", value=ss.get("endereco_ip", ""))
-        ss.vlan = st.text_input("VLAN / Tag", value=ss.get("vlan", ""))
-        ss.gw = st.text_input("Gateway", value=ss.get("gw", ""))
-
-    st.markdown("---")
-
-    st.markdown("#### Equipamentos envolvidos")
-    colA, colB, colC, colD = st.columns([1.4, 1.2, 1.2, 1.2])
-    with colA:
-        ss.eq_tipo = st.text_input("Tipo", value=ss.get("eq_tipo", "Roteador / Switch / AP"))
-    with colB:
-        ss.eq_fabricante = st.text_input("Fabricante", value=ss.get("eq_fabricante", ""))
-    with colC:
-        ss.eq_modelo = st.text_input("Modelo", value=ss.get("eq_modelo", ""))
-    with colD:
-        ss.eq_serial = st.text_input("Nº de Série", value=ss.get("eq_serial", ""))
-
-    st.markdown("</div>", unsafe_allow_html=True)
+def _textarea(label, key, height=80, placeholder=""):
+    return st.text_area(label, key=key, height=height, placeholder=placeholder)
 
 
-def sec_execucao(ss):
-    st.markdown('<div class="rat-card">', unsafe_allow_html=True)
-    st.markdown('<div class="rat-section-title">3) Execução do Serviço</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="rat-section-sub">Atividades realizadas, testes e resultados.</div>',
-        unsafe_allow_html=True,
-    )
-
-    col1, col2 = st.columns(2)
-    with col1:
-        ss.servicos_realizados = st.text_area(
-            "Serviços realizados (passo a passo)",
-            value=ss.get("servicos_realizados", ""),
-            height=160,
-        )
-    with col2:
-        ss.testes_executados = st.text_area(
-            "Testes executados (ping, chamadas, navegação, etc.)",
-            value=ss.get("testes_executados", ""),
-            height=160,
-        )
-
-    st.markdown("---")
-    ss.obs_gerais = st.text_area(
-        "Observações gerais (informações adicionais, restrições, pendências tratadas em tempo real)",
-        value=ss.get("obs_gerais", ""),
-        height=120,
-    )
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-
-def sec_produtividade_aceite(ss):
-    st.markdown('<div class="rat-card">', unsafe_allow_html=True)
-    st.markdown('<div class="rat-section-title">4) Produtividade & Aceite</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="rat-section-sub">Resultado final do atendimento e validação junto ao cliente.</div>',
-        unsafe_allow_html=True,
-    )
-
-    c1, c2 = st.columns([1.5, 2])
-    with c1:
-        ss.produtivo = st.selectbox(
-            "Status do atendimento",
-            ["sim-totalmente produtivo", "produtivo parcial", "não-improdutivo"],
-            index=["sim-totalmente produtivo", "produtivo parcial", "não-improdutivo"].index(
-                ss.get("produtivo", "sim-totalmente produtivo")
-            ),
-        )
-        ss.teste_final_wan = st.selectbox(
-            "Teste final com equipamento do cliente?",
-            ["S", "N", "NA"],
-            index=["S", "N", "NA"].index(ss.get("teste_final_wan", "NA")),
-        )
-    with c2:
-        ss.resumo_resultado = st.text_area(
-            "Resumo do resultado para o cliente",
-            value=ss.get("resumo_resultado", ""),
-            height=110,
-        )
-
-    st.markdown("---")
-
-    c3, c4 = st.columns(2)
-    with c3:
-        st.markdown("##### Assinatura do Técnico")
-        ss.tecnico_nome = st.text_input("Nome do técnico", value=ss.get("tecnico_nome", ""))
-        # a captura da assinatura em si você já tem em common.ui, depois encaixa aqui
-    with c4:
-        st.markdown("##### Aceite do Cliente")
-        ss.cliente_validador_nome = st.text_input("Nome do validador", value=ss.get("cliente_validador_nome", ""))
-        ss.validador_tel = st.text_input("Telefone do validador", value=ss.get("validador_tel", ""))
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-
-def sec_fotos(ss):
-    st.markdown('<div class="rat-card">', unsafe_allow_html=True)
-    st.markdown('<div class="rat-section-title">5) Evidências Fotográficas</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="rat-section-sub">'
-        'Envie as principais fotos do ambiente, rack, equipamentos e telas de teste. '
-        'Essas imagens serão anexadas ao PDF final.'
-        '</div>',
-        unsafe_allow_html=True,
-    )
-
-    # Aqui você pluga seu componente existente (ex.: foto_gateway_uploader)
-    st.info("Use o componente de upload de fotos do módulo principal (ex.: foto_gateway_uploader).")
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-
-# ================== ENTRADA PRINCIPAL ==================
-
+# ---------- layout principal ----------
 
 def render_layout():
     """
-    Monta o layout completo da RAT Unificada.
-    - Não mexe em PDF, só UI.
-    - Usa st.session_state (ss).
+    Desenha o layout inteiro da RAT unificada + controle de etapas.
+    Usa st.session_state (ss) para armazenar os valores.
     """
     apply_dark_full_layout()
     header_bar()
 
     ss = st.session_state
+    if "rat_step" not in ss:
+        ss.rat_step = 1
 
-    tabs = st.tabs(
-        [
-            "Identificação",
-            "Dados Operacionais",
-            "Execução",
-            "Produtividade & Aceite",
-            "Fotos",
+    st.markdown("")
+
+    # ================== FORM PRINCIPAL (ETAPA 1) ==================
+    with st.form("rat_unificada_form", clear_on_submit=False):
+        # ---------- Card 1: Identificação ----------
+        st.markdown('<div class="ever-card">', unsafe_allow_html=True)
+        st.markdown('<div class="ever-section-title">1) Identificação do Chamado</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="ever-section-subtitle">Informe os dados principais do relatório e do chamado.</div>',
+            unsafe_allow_html=True,
+        )
+
+        c1, c2, c3 = st.columns([1.2, 1.2, 1])
+        with c1:
+            _text_input("Número do Relatório", key="numero_relatorio", placeholder="Ex.: RAT-2026-0001")
+        with c2:
+            _text_input("Número do Chamado / Ticket", key="numero_chamado", placeholder="Ex.: 21-000000-0")
+        with c3:
+            _text_input("Operadora / Contrato", key="operadora_contrato", placeholder="Ex.: Oi / Bradesco")
+
+        c4, c5 = st.columns([2, 1])
+        with c4:
+            _text_input("Cliente / Unidade", key="cliente_nome", placeholder="Ex.: Agência Bradesco XYZ")
+        with c5:
+            _text_input("Código UL / Circuito", key="codigo_ul_circuito", placeholder="Ex.: UL 21-000000-0")
+
+        _text_input("Cidade / UF ou Localidade", key="localidade", placeholder="Ex.: São Paulo / SP")
+
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("")
+
+        # ---------- Card 2: Equipe Técnica ----------
+        st.markdown('<div class="ever-card">', unsafe_allow_html=True)
+        st.markdown('<div class="ever-section-title">2) Equipe Técnica</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="ever-section-subtitle">Identificação dos analistas envolvidos no atendimento.</div>',
+            unsafe_allow_html=True,
+        )
+
+        cA, cB = st.columns(2)
+        with cA:
+            _text_input("Analista Suporte", key="analista_suporte", placeholder="Nome do analista de suporte")
+        with cB:
+            _text_input(
+                "Analista Validador (NOC / Projetos)",
+                key="analista_validador",
+                placeholder="Nome de quem validou o atendimento",
+            )
+
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("")
+
+        # ---------- Card 3: Informações do Atendimento (substitui Dados Operacionais) ----------
+        st.markdown('<div class="ever-card">', unsafe_allow_html=True)
+        st.markdown('<div class="ever-section-title">3) Informações do Atendimento</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="ever-section-subtitle">Resumo técnico do que foi realizado em campo ou remoto.</div>',
+            unsafe_allow_html=True,
+        )
+
+        # Tipo de atendimento (checklist)
+        tipo_opts = [
+            "Instalação",
+            "Ativação",
+            "Manutenção corretiva",
+            "Manutenção preventiva",
+            "Retirada de equipamento",
+            "Vistoria técnica",
+            "Atendimento remoto",
         ]
-    )
+        ss.tipo_atendimento = st.multiselect(
+            "Tipo de Atendimento",
+            options=tipo_opts,
+            default=ss.get("tipo_atendimento", []),
+            help="Selecione um ou mais tipos que descrevem melhor o atendimento.",
+        )
 
-    with tabs[0]:
-        sec_identificacao(ss)
-    with tabs[1]:
-        sec_dados_operacionais(ss)
-    with tabs[2]:
-        sec_execucao(ss)
-    with tabs[3]:
-        sec_produtividade_aceite(ss)
-    with tabs[4]:
-        sec_fotos(ss)
+        cD, cT = st.columns([1, 2])
+        with cD:
+            _number_input("Distância percorrida (KM)", key="distancia_km", min_value=0.0, max_value=9999.0, step=0.5)
+        with cT:
+            testes_opts = [
+                "Ping",
+                "Chamadas de voz",
+                "Navegação Web",
+                "Speedtest",
+                "Teste de VPN",
+                "Outros",
+            ]
+            ss.testes_executados = st.multiselect(
+                "Testes executados (ping, chamadas, navegação, etc.)",
+                options=testes_opts,
+                default=ss.get("testes_executados", []),
+            )
+
+        _textarea(
+            "Resumo da atividade executada",
+            key="resumo_atividade",
+            height=100,
+            placeholder="Descreva de forma objetiva o que foi feito (configurações, testes, ajustes, etc.)",
+        )
+
+        _textarea(
+            "Observações gerais (opcional)",
+            key="observacoes_gerais",
+            height=80,
+            placeholder="Informações adicionais relevantes para o chamado.",
+        )
+
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("")
+
+        # ---------- Card 4: Materiais e Equipamentos ----------
+        st.markdown('<div class="ever-card">', unsafe_allow_html=True)
+        st.markdown('<div class="ever-section-title">4) Materiais e Equipamentos</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="ever-section-subtitle">Liste os materiais e equipamentos utilizados, retirados ou existentes.</div>',
+            unsafe_allow_html=True,
+        )
+
+        _textarea(
+            "Material utilizado",
+            key="material_utilizado",
+            height=80,
+            placeholder="Ex.: 2x patch cord CAT6 2m, 1x conector RJ45, etc.",
+        )
+        _textarea(
+            "Equipamentos Retirados (se houver)",
+            key="equipamentos_retirados",
+            height=80,
+            placeholder="Ex.: 1x roteador antigo, 1x modem substituído, etc.",
+        )
+        _textarea(
+            "Equipamentos (Instalados / Existentes no Cliente)",
+            key="equipamentos_instalados",
+            height=80,
+            placeholder="Ex.: 1x Gateway Aligera, 2x AP Intelbras, 1x Switch Datacom...",
+        )
+
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("")
+
+        # ---------- Card 5: Assinaturas ----------
+        st.markdown('<div class="ever-card">', unsafe_allow_html=True)
+        st.markdown('<div class="ever-section-title">5) Assinaturas</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="ever-section-subtitle">Dados para assinatura do técnico e do responsável do cliente.</div>',
+            unsafe_allow_html=True,
+        )
+
+        colTec, colCli = st.columns(2)
+
+        with colTec:
+            st.markdown("**Técnico**")
+            _text_input("Nome do Técnico", key="tecnico_nome")
+            _text_input("Telefone do Técnico", key="tecnico_telefone", placeholder="(DDD) 99999-9999")
+            _text_input("Documento do Técnico (CPF / RG)", key="tecnico_documento")
+
+        with colCli:
+            st.markdown("**Cliente / Responsável**")
+            _text_input("Nome do Cliente / Responsável", key="cliente_ass_nome")
+            _text_input("Telefone do Cliente", key="cliente_ass_telefone", placeholder="(DDD) 99999-9999")
+            _text_input("Documento do Cliente (CPF / CNPJ)", key="cliente_ass_documento")
+
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("")
+
+        # ---------- Rodapé do FORM: Botão de Próxima Etapa ----------
+        c_next, c_dummy = st.columns([1, 3])
+        with c_next:
+            next_clicked = st.form_submit_button("➡️ Próxima etapa")
+
+        if next_clicked:
+            ss.rat_step = 2
+
+    # ================== ETAPA 2: Revisão + botão Gerar RAT ==================
+    if ss.rat_step >= 2:
+        st.markdown("")
+        st.markdown('<div class="ever-card">', unsafe_allow_html=True)
+        st.markdown('<div class="ever-section-title">Etapa 2) Revisar e gerar RAT</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="ever-section-subtitle">'
+            'Revise as informações preenchidas acima. '
+            'Se estiver tudo correto, clique em <b>Gerar RAT (PDF)</b>.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        col_gen, col_back = st.columns([1, 1])
+        with col_gen:
+            if st.button("🧾 Gerar RAT (PDF)"):
+                ss.trigger_generate = True
+        with col_back:
+            if st.button("⬅️ Voltar e editar"):
+                ss.rat_step = 1
+
+        st.markdown('</div>', unsafe_allow_html=True)
