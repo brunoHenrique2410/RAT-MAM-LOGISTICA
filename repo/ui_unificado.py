@@ -1,5 +1,10 @@
 # repo/ui_rat_unificada.py
-# Layout da RAT MAM UNIFICADA (modo escuro, full width, logo Evernex)
+# Layout da RAT MAM UNIFICADA
+# - modo escuro
+# - largura "quase" full
+# - logo Evernex no topo
+# - abas por seção
+# - cards bonitinhos
 
 import os
 import streamlit as st
@@ -9,14 +14,15 @@ THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(THIS_DIR)
 ASSETS_DIR = os.path.join(PROJECT_ROOT, "assets")
 
-# tenta usar um logo Evernex; se não tiver, usa selo_evernex_maminfo.png
+# candidatos de logo (ajuste os nomes se usar outro arquivo)
 LOGO_CANDIDATOS = [
     os.path.join(ASSETS_DIR, "logo_evernex.png"),
     os.path.join(ASSETS_DIR, "logo_evernex_maminfo.png"),
     os.path.join(ASSETS_DIR, "selo_evernex_maminfo.png"),
 ]
 
-def _get_logo_path():
+
+def _get_logo_path() -> str:
     for p in LOGO_CANDIDATOS:
         if os.path.exists(p):
             return p
@@ -25,12 +31,11 @@ def _get_logo_path():
 
 def apply_dark_full_layout():
     """
-    Ajustes visuais (CSS) para:
+    CSS pra:
       - fundo escuro
+      - largura quase total
       - cards com sombra
-      - botões mais bonitos
-      - largura full
-    Streamlit ainda respeita o tema global, mas isso dá um tapa de UX.
+      - inputs escuros
     """
     st.markdown(
         """
@@ -40,7 +45,7 @@ def apply_dark_full_layout():
             background-color: #050608;
         }
 
-        /* largura total */
+        /* largura quase total */
         .block-container {
             padding-top: 1.5rem;
             padding-bottom: 3rem;
@@ -49,22 +54,34 @@ def apply_dark_full_layout():
             max-width: 98%;
         }
 
-        /* título principal */
+        /* títulos */
         h1, h2, h3, h4, h5, h6 {
             color: #f5f5f7 !important;
         }
 
-        /* texto */
-        .stMarkdown, label, .stTextInput label, .stSelectbox label {
+        /* texto geral */
+        .stMarkdown, label, .stTextInput label, .stSelectbox label, .stDateInput label {
             color: #e5e5ea !important;
         }
 
-        /* inputs */
+        /* inputs escuros */
         .stTextInput > div > div > input,
+        .stDateInput > div > div > input,
+        .stTimeInput > div > div > input,
         .stNumberInput input,
-        .stSelectbox > div > div > div {
+        .stSelectbox > div > div,
+        textarea {
             background-color: #111216 !important;
             color: #f5f5f7 !important;
+        }
+
+        /* borda/hover inputs */
+        .stTextInput > div > div,
+        .stDateInput > div > div,
+        .stTimeInput > div > div,
+        .stSelectbox > div > div {
+            border-radius: 10px;
+            border: 1px solid #262738;
         }
 
         /* cards customizados */
@@ -90,9 +107,18 @@ def apply_dark_full_layout():
             margin-bottom: 0.8rem;
         }
 
-        /* abas */
-        button[kind="header"] {
-            color: #f5f5f7 !important;
+        /* botão principal */
+        .stButton>button {
+            border-radius: 999px;
+            padding: 0.5rem 1.4rem;
+            border: 1px solid #3b82f6;
+            background: linear-gradient(90deg, #2563eb, #1d4ed8);
+            color: #f9fafb;
+            font-weight: 600;
+        }
+
+        .stButton>button:hover {
+            filter: brightness(1.1);
         }
         </style>
         """,
@@ -117,8 +143,7 @@ def header_bar():
             <div style="padding-left:0.5rem; padding-top:0.2rem;">
               <h1 style="margin-bottom:0.1rem;">RAT MAM – Unificada</h1>
               <p style="color:#a1a1b3; font-size:0.9rem; margin-top:0;">
-                Registro de Atendimento Técnico com fluxo unificado de
-                identificação, operação e aceite.
+                Registro de Atendimento Técnico com fluxo unificado de identificação, operação e aceite.
               </p>
             </div>
             """,
@@ -126,7 +151,8 @@ def header_bar():
         )
 
 
-# ========== SEÇÕES ==========
+# ================== SEÇÕES ==================
+
 
 def sec_identificacao(ss):
     st.markdown('<div class="rat-card">', unsafe_allow_html=True)
@@ -138,14 +164,32 @@ def sec_identificacao(ss):
 
     c1, c2, c3 = st.columns([1.2, 1.2, 1])
     with c1:
-        ss.data_atendimento = st.date_input("Data do atendimento", value=ss.get("data_atendimento", None))
-        ss.hora_inicio = st.time_input("Horário início", value=ss.get("hora_inicio", None))
+        ss.data_atendimento = st.date_input(
+            "Data do atendimento",
+            value=ss.get("data_atendimento", None),
+        )
+        ss.hora_inicio = st.time_input(
+            "Horário início",
+            value=ss.get("hora_inicio", None),
+        )
     with c2:
-        ss.numero_chamado = st.text_input("Número do Chamado", value=ss.get("numero_chamado", ""))
-        ss.hora_termino = st.time_input("Horário término", value=ss.get("hora_termino", None))
+        ss.numero_chamado = st.text_input(
+            "Número do Chamado",
+            value=ss.get("numero_chamado", ""),
+        )
+        ss.hora_termino = st.time_input(
+            "Horário término",
+            value=ss.get("hora_termino", None),
+        )
     with c3:
-        ss.analista_mam = st.text_input("Analista MAMINFO", value=ss.get("analista_mam", ""))
-        ss.tipo_atendimento = st.text_input("Tipo de atendimento", value=ss.get("tipo_atendimento", ""))
+        ss.analista_mam = st.text_input(
+            "Analista MAMINFO",
+            value=ss.get("analista_mam", ""),
+        )
+        ss.tipo_atendimento = st.text_input(
+            "Tipo de atendimento",
+            value=ss.get("tipo_atendimento", ""),
+        )
 
     st.markdown("---")
 
@@ -265,7 +309,7 @@ def sec_produtividade_aceite(ss):
     with c3:
         st.markdown("##### Assinatura do Técnico")
         ss.tecnico_nome = st.text_input("Nome do técnico", value=ss.get("tecnico_nome", ""))
-        # a captura da assinatura em si você já tem em common.ui (assinatura_dupla_png etc.)
+        # a captura da assinatura em si você já tem em common.ui, depois encaixa aqui
     with c4:
         st.markdown("##### Aceite do Cliente")
         ss.cliente_validador_nome = st.text_input("Nome do validador", value=ss.get("cliente_validador_nome", ""))
@@ -285,19 +329,20 @@ def sec_fotos(ss):
         unsafe_allow_html=True,
     )
 
-    # Aqui você pode continuar usando seu componente atual (foto_gateway_uploader)
-    st.info("Use o componente de upload de fotos já existente no seu projeto.")
+    # Aqui você pluga seu componente existente (ex.: foto_gateway_uploader)
+    st.info("Use o componente de upload de fotos do módulo principal (ex.: foto_gateway_uploader).")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
 
-# ========== ENTRADA PRINCIPAL ==========
+# ================== ENTRADA PRINCIPAL ==================
+
 
 def render_layout():
     """
-    Função que monta o layout completo da RAT Unificada.
-    - Chame isso de dentro do seu rat_mam_unificada.py ou app.py
-    - Não inicializa defaults; apenas usa st.session_state (ss).
+    Monta o layout completo da RAT Unificada.
+    - Não mexe em PDF, só UI.
+    - Usa st.session_state (ss).
     """
     apply_dark_full_layout()
     header_bar()
