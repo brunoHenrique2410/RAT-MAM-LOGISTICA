@@ -1,32 +1,25 @@
-# repo/rat_mam_unificada.py
+# repo/app.py
+import os
+import sys
 import streamlit as st
-from datetime import date, time
-from common.state import init_defaults
-from ui_rat_unificada import render_layout
-from common.pdf import open_pdf_template  # depois você usa para gerar o PDF
 
-def render():
-    init_defaults({
-        "data_atendimento": date.today(),
-        "hora_inicio": time(8, 0),
-        "hora_termino": time(10, 0),
-        "cliente": "",
-        "numero_chamado": "",
-        "analista_mam": "",
-        # ... (resto dos campos que o layout usa, se quiser default)
-    })
+# === Ajuste de PATH para achar "common", "pdf_templates", etc. ===
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))   # .../repo
+PROJECT_ROOT = os.path.dirname(THIS_DIR)               # raiz do projeto
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
-    render_layout()   # desenha só a UI
-
-    st.divider()
-    if st.button("🧾 Gerar RAT Unificada (PDF)"):
-        st.warning("Aqui entra a lógica de geração do PDF usando o RAT_MAM_UNIFICADA_VF.pdf.")
-        # pdf_bytes = gerar_pdf_unificado(st.session_state)
-        # st.download_button(...)
+import rat_mam_unificada  # depois do PATH estar ajustado
 
 
-# e no app.py:
-# import rat_mam_unificada
-# ...
-# if modo == "RAT MAM Unificada":
-#     rat_mam_unificada.render()
+def main():
+    st.set_page_config(
+        page_title="RAT MAM – Unificada",
+        layout="wide",
+        page_icon="🧾",
+    )
+    rat_mam_unificada.render()
+
+
+if __name__ == "__main__":
+    main()
