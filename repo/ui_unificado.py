@@ -91,7 +91,7 @@ def header_bar():
     col_logo, col_title = st.columns([1, 4])
     with col_logo:
         if logo_path:
-            # Sem use_container_width para evitar erro na sua versão
+            # Sem use_container_width para evitar erro na versão do Streamlit do ambiente
             st.image(logo_path)
         else:
             st.markdown("### Evernex")
@@ -199,7 +199,7 @@ def render_layout():
         st.markdown('</div>', unsafe_allow_html=True)
         st.markdown("")
 
-        # ---------- Card 3: Informações do Atendimento (substitui Dados Operacionais) ----------
+        # ---------- Card 3: Informações do Atendimento ----------
         st.markdown('<div class="ever-card">', unsafe_allow_html=True)
         st.markdown('<div class="ever-section-title">3) Informações do Atendimento</div>', unsafe_allow_html=True)
         st.markdown(
@@ -217,10 +217,16 @@ def render_layout():
             "Vistoria técnica",
             "Atendimento remoto",
         ]
+        # garante que o default seja sempre lista válida
+        default_tipo = ss.get("tipo_atendimento", [])
+        if isinstance(default_tipo, str):
+            default_tipo = [default_tipo] if default_tipo in tipo_opts else []
+        default_tipo = [v for v in default_tipo if v in tipo_opts]
+
         ss.tipo_atendimento = st.multiselect(
             "Tipo de Atendimento",
             options=tipo_opts,
-            default=ss.get("tipo_atendimento", []),
+            default=default_tipo,
             help="Selecione um ou mais tipos que descrevem melhor o atendimento.",
         )
 
@@ -236,10 +242,15 @@ def render_layout():
                 "Teste de VPN",
                 "Outros",
             ]
+            default_testes = ss.get("testes_executados", [])
+            if isinstance(default_testes, str):
+                default_testes = [default_testes] if default_testes in testes_opts else []
+            default_testes = [v for v in default_testes if v in testes_opts]
+
             ss.testes_executados = st.multiselect(
                 "Testes executados (ping, chamadas, navegação, etc.)",
                 options=testes_opts,
-                default=ss.get("testes_executados", []),
+                default=default_testes,
             )
 
         _textarea(
