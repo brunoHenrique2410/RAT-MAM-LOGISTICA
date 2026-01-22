@@ -9,7 +9,7 @@ PROJECT_ROOT = os.path.dirname(THIS_DIR)               # raiz do projeto
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-import rat_mam_unificada  # depois do PATH estar ajustado
+import rat_unificado  # depois do PATH estar ajustado
 
 
 def main():
@@ -23,3 +23,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
