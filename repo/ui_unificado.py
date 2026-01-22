@@ -20,7 +20,7 @@ from common.ui import assinatura_dupla_png
 # Caminho do logo (ajuste se o arquivo tiver outro nome)
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(THIS_DIR)
-LOGO_PATH = os.path.join(PROJECT_ROOT, "assets", "evernex_maminfo.png")
+LOGO_PATH = os.path.join(PROJECT_ROOT, "assets", "selo_evernex_maminfo.png")
 
 
 # ========== Helpers de layout ==========
