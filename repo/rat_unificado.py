@@ -1,9 +1,9 @@
 # repo/rat_unificado.py
 """
-RAT MAMINFO UNIFICADA - Lado Python (estado + gatilho de geração)
-
-- Define valores padrão em st.session_state
-- Chama o layout em ui_unificado.render_layout()
+RAT UNIFICADA – núcleo lógico:
+- Define defaults da sessão
+- Chama o layout (ui_unificado.render_layout)
+- Dispara geração de PDF quando ss.trigger_generate = True
 """
 
 import os
@@ -12,24 +12,28 @@ from datetime import date, time
 
 import streamlit as st
 
-# Garante que a pasta raiz (onde fica common/) está no sys.path
-THIS_DIR = os.path.dirname(os.path.abspath(__file__))      # .../repo
-PROJECT_ROOT = os.path.dirname(THIS_DIR)                   # raiz do projeto
+# ---------- PATHS ----------
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(THIS_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from common.state import init_defaults
-import ui_unificado  # arquivo de UI em repo/ui_unificado.py
+from common.state import init_defaults  # type: ignore
+import ui_unificado  # type: ignore
+# no momento só preparamos o template; geração vem depois
+from common.pdf import open_pdf_template  # type: ignore
+
+PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
+RAT_UNIFICADA_TEMPLATE = os.path.join(PDF_DIR, "RAT_MAM_UNIFICADA_VF.pdf")
 
 
 def _init_rat_defaults():
     """
-    Inicializa todos os campos da RAT Unificada no session_state.
-    Assim evitamos erro de default em multiselect / etc.
+    Inicializa somente os campos de dados.
+    step_unificado e trigger_generate são controlados manualmente.
     """
-
     init_defaults({
-        # ========= 1) Dados do Relatório & Local de Atendimento =========
+        # ========= 1) Dados do Relatório & Local =========
         "rel_numero": "",
         "chamado_numero": "",
         "operadora_contrato": "",
@@ -46,43 +50,53 @@ def _init_rat_defaults():
         "analista_suporte": "",
         "analista_integradora": "",
         "analista_validador": "",
-        "tipo_atendimento": [],     # multiselect
+        "tipo_atendimento": [],
         "motivo_chamado": "",
-        "checklist_tecnico_ok": [],  # multiselect de itens OK
+        "checklist_tecnico_ok": [],
 
         # ========= 3) Materiais & Equipamentos =========
         "material_utilizado": "",
         "equip_instalados": "",
         "equip_retirados": "",
 
-        # ========= 4) Observações =========
-        "testes_realizados": [],    # multiselect (Autenticação / Navegação / etc.)
+        # ========= 4) Observações & Testes =========
+        "testes_realizados": [],
         "descricao_atendimento": "",
         "observacoes_pendencias": "",
 
         # ========= 5) Aceite & Assinaturas =========
-        # Técnico
         "tec_nome": "",
         "tec_documento": "",
         "tec_telefone": "",
         "tec_data": date.today(),
         "tec_hora": time(10, 0),
 
-        # Cliente
         "cli_nome": "",
         "cli_documento": "",
         "cli_telefone": "",
         "cli_data": date.today(),
         "cli_hora": time(10, 30),
 
-        # Assinaturas (common.ui.assinatura_dupla_png usa esses campos)
         "sig_tec_png": None,
         "sig_cli_png": None,
-
-        # Controle de steps e geração
-        "step_unificado": 1,
-        "trigger_generate": False,
     })
+
+    ss = st.session_state
+    if "step_unificado" not in ss:
+        ss.step_unificado = 1
+    if "trigger_generate" not in ss:
+        ss.trigger_generate = False
+
+
+def _generate_pdf_from_state():
+    """
+    Placeholder de geração de PDF.
+    Aqui depois a gente mapeia os campos para RAT_MAM_UNIFICADA_VF.pdf.
+    Por enquanto só mostra uma mensagem pra não quebrar o app.
+    """
+    st.info("🧾 Geração do PDF da RAT Unificada ainda não está implementada aqui.\n"
+            "Os dados da tela já estão prontos para serem mapeados para o template "
+            "`RAT_MAM_UNIFICADA_VF.pdf`.")
 
 
 def render():
@@ -91,11 +105,12 @@ def render():
     """
     _init_rat_defaults()
 
-    ui_unificado.render_layout()  # desenha layout + controla step / botão
+    # desenha layout + controla navegação / botões
+    ui_unificado.render_layout()
 
     ss = st.session_state
+
+    # Se o botão 'Gerar RAT' da etapa 5 for clicado
     if ss.get("trigger_generate"):
-        # Aqui no futuro você chama a função de gerar PDF usando RAT_MAM_UNIFICADA_VF.pdf
-        st.success("✅ RAT pronta para geração (a lógica de PDF entra aqui depois).")
-        # Reseta o gatilho pra não ficar gerando em loop
-        ss.trigger_generate = False
+        ss.trigger_generate = False  # reseta flag
+        _generate_pdf_from_state()
