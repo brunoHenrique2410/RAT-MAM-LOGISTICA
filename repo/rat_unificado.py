@@ -73,7 +73,7 @@ def _init_rat_defaults() -> None:
             "anormalidade_flags": [],        # ex.: ["Interrupção total", "Lentidão"]
             "motivo_chamado": "",            # fallback texto livre
             # checklist técnico – por enquanto texto; no futuro pode virar dict
-            "checklist_tecnico": [],
+            "checklist_tecnico": {},
             # --------- BLOCO 3 – Materiais & Equipamentos ---------
             "material_utilizado": "",
             "equip_instalados": "",
