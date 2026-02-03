@@ -234,14 +234,6 @@ def step2_atendimento_testes() -> None:
         default=default_flags,
         help="Essas opções serão usadas para marcar os X no PDF.",
     )
-
-    ss.motivo_chamado = st.text_area(
-        "Descrição adicional / Observações do motivo do chamado",
-        value=ss.motivo_chamado,
-        height=80,
-    )
-
-
 # ----------------- ETAPA 3 – CHECKLIST TÉCNICO -----------------
 
 
