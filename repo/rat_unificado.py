@@ -264,7 +264,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         page,
         ["Contato (nome)", "Contato", "Contato (Nome)"],
         ss.contato_nome,
-        dx=8,
+        dx=5,
         dy=15,
     )
 
