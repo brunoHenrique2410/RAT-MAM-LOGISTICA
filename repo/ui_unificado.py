@@ -363,14 +363,14 @@ def render_layout():
         if step > 1:
             if st.button("⬅️ Voltar", key="btn_voltar"):
                 ss.step = step - 1
-                st.experimental_rerun()
+                st.rerun()
 
     # Botão Próxima etapa
     with col_next:
         if step < 5:
             if st.button("Próxima etapa ➡️", key="btn_proxima"):
                 ss.step = step + 1
-                st.experimental_rerun()
+                st.rerun()
 
     # Botão Gerar RAT (apenas na última etapa)
     with col_generate:
