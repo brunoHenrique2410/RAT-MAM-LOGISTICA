@@ -1,6 +1,6 @@
 # repo/ui_unificado.py
-# Layout unificado em 5 etapas (modo escuro, largura full)
-# Etapas:
+# Layout unificado em 5 blocos (modo escuro, largura full) com ABAS no topo.
+# Abas:
 # 1) Dados do Relatório & Local de Atendimento
 # 2) Atendimento & Testes
 # 3) Materiais & Equipamentos
@@ -21,7 +21,6 @@ def apply_dark_full_layout() -> None:
     st.markdown(
         """
         <style>
-        /* fundo principal */
         .main {
             background-color: #020617;
         }
@@ -29,8 +28,9 @@ def apply_dark_full_layout() -> None:
             background-color: #020617;
             color: #e5e7eb;
         }
-
-        /* textos dos labels */
+        h1, h2, h3, h4 {
+            color: #f9fafb !important;
+        }
         .stTextInput > label,
         .stTextArea > label,
         .stSelectbox > label,
@@ -38,18 +38,6 @@ def apply_dark_full_layout() -> None:
             font-weight: 600;
             color: #e5e7eb !important;
         }
-
-        /* títulos */
-        h1, h2, h3, h4 {
-            color: #f9fafb !important;
-        }
-
-        /* caixas */
-        .stTextInput, .stTextArea, .stSelectbox, .stMultiselect {
-            color: #e5e7eb;
-        }
-
-        /* botões */
         div.stButton > button {
             border-radius: 999px;
             font-weight: 600;
@@ -64,63 +52,34 @@ def header_bar() -> None:
     """Barra superior com logo Evernex + título."""
     col_logo, col_title = st.columns([1, 4])
 
-    logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "selo_evernex_maminfo.png")
+    logo_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        "assets",
+        "selo_evernex_maminfo.png",
+    )
     with col_logo:
         if os.path.exists(logo_path):
-            st.image(logo_path)  # sem use_container_width pra evitar erro
+            st.image(logo_path)
         else:
             st.markdown("### Evernex")
 
     with col_title:
         st.markdown("## RAT MAM – Unificada (Modo Escuro)")
         st.caption(
-            "Preencha as etapas na ordem. Ao final, clique em **Gerar RAT** para criar o PDF "
-            "baseado no modelo RAT_MAM_UNIFICADA_VF.pdf."
+            "Preencha as abas na ordem que preferir. Ao final, clique em "
+            "**Gerar RAT** para criar o PDF com base na RAT_MAM_UNIFICADA_VF.pdf."
         )
 
 
-def _get_step() -> int:
-    ss = st.session_state
-    if "step" not in ss:
-        ss.step = 1
-    try:
-        s = int(ss.step)
-    except Exception:
-        s = 1
-    if s < 1:
-        s = 1
-    if s > 5:
-        s = 5
-    ss.step = s
-    return s
+# =============== ETAPAS (ABAS) ===============
 
-
-def _step_indicator(step: int) -> None:
-    st.markdown(f"### Etapa {step} de 5")
-    st.progress(step / 5.0)
-
-
-# =============== ETAPAS ===============
-
-def _etapa_1():
+def _tab_1_dados_relatorio():
     """
     1) Dados do Relatório & Local de Atendimento
-
-    N° Relatório
-    N° Chamado
-    Operadora / Contrato
-    Cliente / Razão Social
-    Início
-    Contato
-    Endereço Completo (Rua, n°, compl., bairro, cidade/UF)
-    Término
-    Telefone / E-mail
-    Distância (KM)
-    Data
     """
     ss = st.session_state
 
-    st.markdown("## 1) Dados do Relatório & Local de Atendimento")
+    st.markdown("### 1) Dados do Relatório & Local de Atendimento")
 
     c1, c2, c3 = st.columns([1, 1, 1])
     with c1:
@@ -199,20 +158,13 @@ def _etapa_1():
     ss.data_atendimento = data_sel.isoformat()
 
 
-def _etapa_2():
+def _tab_2_atendimento_testes():
     """
-    2 — Atendimento & Testes
-
-    Analista Suporte
-    Analista Integradora (MAMINFO)
-    Analista validador (NOC / Projetos)
-    Tipo de Atendimento
-    Anormalidade / Motivo do Chamado
-    Checklist Técnico (SIM / NÃO)
+    2) Atendimento & Testes
     """
     ss = st.session_state
 
-    st.markdown("## 2) Atendimento & Testes")
+    st.markdown("### 2) Atendimento & Testes")
 
     c1, c2 = st.columns(2)
     with c1:
@@ -240,7 +192,7 @@ def _etapa_2():
         value=ss.get("motivo_chamado", ""),
     )
 
-    st.markdown("### Checklist Técnico (SIM / NÃO)")
+    st.markdown("#### Checklist Técnico (SIM / NÃO)")
     st.caption("Marque os itens verificados durante o atendimento.")
 
     opcoes_check = [
@@ -255,7 +207,6 @@ def _etapa_2():
     prev = ss.get("checklist_tecnico", [])
     if not isinstance(prev, list):
         prev = []
-
     default_vals = [v for v in prev if v in opcoes_check]
 
     ss.checklist_tecnico = st.multiselect(
@@ -265,17 +216,13 @@ def _etapa_2():
     )
 
 
-def _etapa_3():
+def _tab_3_materiais_equipamentos():
     """
-    3 — Materiais & Equipamentos
-
-    Material utilizado
-    Equipamentos (Instalados)
-    Equipamentos Retirados (se houver)
+    3) Materiais & Equipamentos
     """
     ss = st.session_state
 
-    st.markdown("## 3) Materiais & Equipamentos")
+    st.markdown("### 3) Materiais & Equipamentos")
 
     ss.material_utilizado = st.text_area(
         "Material utilizado",
@@ -299,19 +246,15 @@ def _etapa_3():
     )
 
 
-def _etapa_4():
+def _tab_4_observacoes():
     """
-    4 — Observações
-
-    Testes realizados (check list)
-    Descrição do Atendimento (o que foi feito / resultado / evidências)
-    Observações / Pendências
+    4) Observações & Testes
     """
     ss = st.session_state
 
-    st.markdown("## 4) Observações & Testes")
+    st.markdown("### 4) Observações & Testes")
 
-    st.markdown("### Testes realizados (check list)")
+    st.markdown("#### Testes realizados (check list)")
     opcoes_testes = [
         "Ping gateway",
         "Ping DNS público (ex.: 8.8.8.8)",
@@ -346,29 +289,16 @@ def _etapa_4():
     )
 
 
-def _etapa_5():
+def _tab_5_aceite_assinaturas():
     """
-    5 — Aceite & Assinaturas
-
-    Técnico MAMINFO:
-        Nome Técnico
-        Documento Técnico
-        Telefone Técnico
-        data e hora
-        assinatura
-    Cliente:
-        Nome cliente
-        Documento cliente
-        Telefone cliente
-        data e hora
-        assinatura
+    5) Aceite & Assinaturas
     """
     ss = st.session_state
 
-    st.markdown("## 5) Aceite & Assinaturas")
+    st.markdown("### 5) Aceite & Assinaturas")
 
     # --- Técnico MAMINFO ---
-    st.markdown("### Técnico MAMINFO")
+    st.markdown("#### Técnico MAMINFO")
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         ss.nome_tecnico = st.text_input(
@@ -395,7 +325,7 @@ def _etapa_5():
     st.markdown("---")
 
     # --- Cliente ---
-    st.markdown("### Cliente")
+    st.markdown("#### Cliente")
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         ss.nome_cliente = st.text_input(
@@ -421,12 +351,12 @@ def _etapa_5():
 
     st.markdown("---")
 
-    st.markdown("### Assinaturas (opcional)")
+    st.markdown("#### Assinaturas (opcional)")
     st.caption(
-        "Você pode coletar as assinaturas digitais aqui, ou deixar para assinar manualmente "
-        "no papel após a impressão."
+        "Você pode coletar as assinaturas digitais aqui, ou deixar para assinar "
+        "manualmente no papel após a impressão."
     )
-    # Essa função normalmente grava ss.sig_tec_png e ss.sig_cli_png
+    # grava ss.sig_tec_png e ss.sig_cli_png
     assinatura_dupla_png()
 
 
@@ -434,49 +364,38 @@ def _etapa_5():
 
 def render_layout() -> None:
     """
-    Função chamada por rat_unificado.render()
-    - Aplica tema escuro
-    - Desenha header
-    - Mostra etapa atual
-    - Renderiza navegação (Voltar / Próxima / Gerar RAT)
+    Função chamada por rat_unificado.render().
+    Agora sem 'step' nem botões de navegação:
+    - Usa abas (tabs) para escolher a etapa.
+    - Botão 'Gerar RAT' único no rodapé.
     """
     apply_dark_full_layout()
     header_bar()
 
-    ss = st.session_state
-    step = _get_step()
-    _step_indicator(step)
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "1) Dados do Relatório",
+        "2) Atendimento & Testes",
+        "3) Materiais & Equipamentos",
+        "4) Observações",
+        "5) Aceite & Assinaturas",
+    ])
 
-    # ---------- Conteúdo da etapa ----------
-    if step == 1:
-        _etapa_1()
-    elif step == 2:
-        _etapa_2()
-    elif step == 3:
-        _etapa_3()
-    elif step == 4:
-        _etapa_4()
-    elif step == 5:
-        _etapa_5()
+    with tab1:
+        _tab_1_dados_relatorio()
+    with tab2:
+        _tab_2_atendimento_testes()
+    with tab3:
+        _tab_3_materiais_equipamentos()
+    with tab4:
+        _tab_4_observacoes()
+    with tab5:
+        _tab_5_aceite_assinaturas()
 
     st.markdown("---")
 
-    # ---------- Navegação ----------
-    col_back, col_next, col_generate = st.columns([1, 1, 1])
+    # Botão único de geração
+    col_spacer_left, col_button, col_spacer_right = st.columns([1, 1, 1])
+    with col_button:
+        gerar = st.button("🧾 Gerar RAT", key="btn_gerar_rat", use_container_width=True)
 
-    with col_back:
-        if step > 1:
-            if st.button("⬅️ Voltar", key="btn_voltar"):
-                ss.step = step - 1
-
-    with col_next:
-        if step < 5:
-            if st.button("Próxima etapa ➡️", key="btn_proxima"):
-                ss.step = step + 1
-
-    with col_generate:
-        if step == 5:
-            gerar = st.button("🧾 Gerar RAT", key="btn_gerar_rat")
-            ss.trigger_generate = bool(gerar)
-        else:
-            ss.trigger_generate = False
+    st.session_state.trigger_generate = bool(gerar)
