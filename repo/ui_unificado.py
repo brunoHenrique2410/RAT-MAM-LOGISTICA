@@ -1,112 +1,77 @@
 # repo/ui_unificado.py
 """
-Camada de UI da RAT Unificada:
-- Layout dark, largura full
-- Navegação em 5 etapas
-- Campos organizados conforme especificação
+Layout (UI) da RAT MAM Unificada
+- Modo escuro
+- Largura full
+- Logo Evernex
+- 5 etapas (steps):
+  1) Dados do Relatório & Local
+  2) Atendimento & Testes
+  3) Materiais & Equipamentos
+  4) Observações
+  5) Aceite & Assinaturas + botão Gerar RAT
 """
 
 import os
 import sys
+import streamlit as st
 from datetime import date, time
 
-import streamlit as st
-
-# ---------- PATHS ----------
+# ---------- PATH ROOT (para achar assets) ----------
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(THIS_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from common.ui import assinatura_dupla_png  # type: ignore
-
-# ---------- opções de select / checklist ----------
-TIPO_ATENDIMENTO_OPCOES = [
-    "Instalação",
-    "Manutenção",
-    "Ativação",
-    "Migração",
-    "Suporte remoto",
-    "Outro",
-]
-
-CHECKLIST_TECNICO_OPCOES = [
-    "Checklist físico (cabos, patch panel, rack)",
-    "Checklist lógico (IPs, VLANs, roteamento)",
-    "Checklist de segurança (firewall, senhas)",
-]
-
-TESTES_REALIZADOS_OPCOES = [
-    "PING",
-    "Navegação",
-    "Speedtest",
-    "Testes de voz / chamadas",
-    "Teste de acesso a sistemas do cliente",
-]
+LOGO_PATH = os.path.join(PROJECT_ROOT, "assets", "evernex_logo.png")  # ajuste o nome se for diferente
 
 
-# ========= helpers de layout =========
+# ---------- ESTILO DARK FULL ----------
 def apply_dark_full_layout():
     """
-    CSS pra modo escuro mais bonitinho e cards full width.
+    CSS para modo escuro e largura mais ampla, com cards bonitos.
     """
     st.markdown(
         """
         <style>
+        /* Full width do container principal */
         .block-container {
-            padding-top: 0.5rem !important;
-            padding-bottom: 2rem !important;
+            padding-top: 1rem;
+            padding-bottom: 1rem;
             max-width: 1200px;
         }
-        body {
-            background-color: #020617;
+        /* Fundo escuro geral */
+        body, .stApp {
+            background-color: #0b1120;
             color: #e5e7eb;
         }
-        .rat-card {
-            background: radial-gradient(circle at top left, #0f172a, #020617);
-            border-radius: 18px;
-            padding: 1.25rem 1.4rem;
-            border: 1px solid rgba(148, 163, 184, 0.4);
-            box-shadow: 0 18px 50px rgba(15, 23, 42, 0.85);
+        /* Cards (expander, etc.) */
+        .stExpander {
+            background-color: #111827 !important;
+            border-radius: 12px !important;
+            border: 1px solid #1f2937 !important;
         }
-        .rat-header {
-            padding: 0.75rem 0 0.25rem 0;
-            border-bottom: 1px solid rgba(148, 163, 184, 0.35);
-            margin-bottom: 0.2rem;
+        .stExpander > div {
+            background-color: #111827 !important;
         }
-        .rat-title {
-            font-size: 1.35rem;
-            font-weight: 600;
-            color: #e5e7eb;
+        /* Inputs */
+        .stTextInput, .stTextArea, .stNumberInput, .stTimeInput, .stDateInput, .stMultiSelect, .stSelectbox {
+            color: #e5e7eb !important;
         }
-        .rat-subtitle {
-            font-size: 0.9rem;
-            color: #9ca3af;
+        /* Títulos */
+        h1, h2, h3, h4 {
+            color: #f9fafb;
         }
-        .step-pill {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0.25rem 0.7rem;
-            border-radius: 999px;
-            margin-right: 0.4rem;
-            font-size: 0.8rem;
-            border: 1px solid rgba(148,163,184,0.4);
-        }
-        .step-pill-active {
-            background: linear-gradient(90deg, #22c55e, #4ade80);
-            color: #022c22;
-            border-color: transparent;
+        /* Botões */
+        .stButton>button {
+            border-radius: 9999px;
+            border: 1px solid #374151;
+            background: linear-gradient(90deg, #10b981, #22c55e);
+            color: white;
             font-weight: 600;
         }
-        .step-pill-done {
-            background: linear-gradient(90deg, #0ea5e9, #38bdf8);
-            color: #02131f;
-            border-color: transparent;
-        }
-        .step-pill-pending {
-            background: transparent;
-            color: #9ca3af;
+        .stButton>button:hover {
+            filter: brightness(1.05);
         }
         </style>
         """,
@@ -114,310 +79,303 @@ def apply_dark_full_layout():
     )
 
 
-def _resolve_logo_path() -> str:
-    root = PROJECT_ROOT
-    # ajuste se o nome do arquivo for outro
-    for name in ["evernex_logo_branco.png", "evernex_logo.png", "logo_evernex.png"]:
-        p = os.path.join(root, "assets", name)
-        if os.path.exists(p):
-            return p
-    return ""
-
-
+# ---------- HEADER ----------
 def header_bar():
-    logo_path = _resolve_logo_path()
+    st.markdown("### ")
+    col_logo, col_title = st.columns([1, 4])
+
+    with col_logo:
+        if os.path.exists(LOGO_PATH):
+            # Para compatibilidade com versões mais antigas de Streamlit, usar só "width="
+            st.image(LOGO_PATH, width=120)
+        else:
+            st.markdown("### Evernex")
+
+    with col_title:
+        st.markdown(
+            """
+            ### 🧾 RAT MAM Unificada
+            <span style="color:#9ca3af;">Relatório de Atendimento Técnico – Modo escuro</span>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("---")
+
+
+# ---------- ETAPAS (FORM) ----------
+
+def render_step1(ss):
+    """
+    1) Dados do Relatório & Local de Atendimento
+    """
     with st.container():
-        col_logo, col_title = st.columns([1, 4])
-        with col_logo:
-            if logo_path:
-                st.image(logo_path)
-            else:
-                st.markdown("### Evernex")
-        with col_title:
-            st.markdown(
-                "<div class='rat-header'>"
-                "<div class='rat-title'>RAT MAMINFO – Relatório Unificado</div>"
-                "<div class='rat-subtitle'>Registro padronizado de atendimento técnico em campo</div>"
-                "</div>",
-                unsafe_allow_html=True,
+        st.subheader("1) Dados do Relatório & Local de Atendimento")
+
+        c1, c2, c3 = st.columns([1, 1, 1])
+        with c1:
+            ss.numero_relatorio = st.text_input("N° Relatório", value=ss.get("numero_relatorio", ""))
+        with c2:
+            ss.numero_chamado = st.text_input("N° Chamado", value=ss.get("numero_chamado", ""))
+        with c3:
+            ss.operadora_contrato = st.text_input("Operadora / Contrato", value=ss.get("operadora_contrato", ""))
+
+        ss.cliente_razao = st.text_input("Cliente / Razão Social", value=ss.get("cliente_razao", ""))
+
+        c4, c5, c6 = st.columns([1, 1, 1])
+        with c4:
+            ss.data_atendimento = st.date_input(
+                "Data",
+                value=ss.get("data_atendimento", date.today()),
+            )
+        with c5:
+            ss.hora_inicio = st.time_input(
+                "Início",
+                value=ss.get("hora_inicio", time(8, 0)),
+            )
+        with c6:
+            ss.hora_termino = st.time_input(
+                "Término",
+                value=ss.get("hora_termino", time(10, 0)),
             )
 
+        c7, c8 = st.columns([2, 1])
+        with c7:
+            ss.contato_nome = st.text_input("Contato", value=ss.get("contato_nome", ""))
+        with c8:
+            ss.telefone_email = st.text_input("Telefone / E-mail", value=ss.get("telefone_email", ""))
 
-def step_indicator(current_step: int):
-    labels = {
-        1: "Dados do Relatório & Local",
-        2: "Atendimento & Testes",
-        3: "Materiais & Equipamentos",
-        4: "Observações",
-        5: "Aceite & Assinaturas",
-    }
-    pills = []
-    for i in range(1, 6):
-        if i < current_step:
-            cls = "step-pill step-pill-done"
-        elif i == current_step:
-            cls = "step-pill step-pill-active"
-        else:
-            cls = "step-pill step-pill-pending"
-        pills.append(
-            f"<span class='{cls}'>Etapa {i} – {labels[i]}</span>"
+        ss.endereco_completo = st.text_area(
+            "Endereço Completo (Rua, nº, compl., bairro, cidade/UF)",
+            value=ss.get("endereco_completo", ""),
+            height=80,
         )
-    st.markdown(" ".join(pills), unsafe_allow_html=True)
 
-
-# ========= ETAPAS =========
-def step_1_dados_relatorio(ss):
-    st.subheader("1) Dados do Relatório & Local de Atendimento")
-
-    c1, c2, c3 = st.columns([1.2, 1.2, 1])
-    with c1:
-        ss.rel_numero = st.text_input("N° Relatório", value=ss.get("rel_numero", ""))
-        ss.chamado_numero = st.text_input("N° Chamado", value=ss.get("chamado_numero", ""))
-        ss.operadora_contrato = st.text_input(
-            "Operadora / Contrato", value=ss.get("operadora_contrato", "")
-        )
-    with c2:
-        ss.cliente_razao = st.text_input(
-            "Cliente / Razão Social", value=ss.get("cliente_razao", "")
-        )
-        ss.contato = st.text_input("Contato", value=ss.get("contato", ""))
-        ss.telefone_email = st.text_input(
-            "Telefone / E-mail", value=ss.get("telefone_email", "")
-        )
-    with c3:
-        ss.data_atendimento = st.date_input(
-            "Data", value=ss.get("data_atendimento", date.today())
-        )
-        ss.hora_inicio = st.time_input(
-            "Início", value=ss.get("hora_inicio", time(8, 0))
-        )
-        ss.hora_termino = st.time_input(
-            "Término", value=ss.get("hora_termino", time(10, 0))
-        )
         ss.distancia_km = st.number_input(
-            "Distância (KM)", min_value=0.0, step=0.5, value=float(ss.get("distancia_km", 0.0))
+            "Distância (KM)",
+            min_value=0.0,
+            max_value=10000.0,
+            step=0.5,
+            value=float(ss.get("distancia_km", 0.0)),
         )
 
-    ss.endereco_completo = st.text_area(
-        "Endereço Completo (Rua, n°, compl., bairro, cidade/UF)",
-        value=ss.get("endereco_completo", ""),
-        height=70,
-    )
 
+def render_step2(ss):
+    """
+    2) Atendimento & Testes
+    """
+    with st.container():
+        st.subheader("2) Atendimento & Testes")
 
-def step_2_atendimento_testes(ss):
-    st.subheader("2) Atendimento & Testes")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            ss.analista_suporte = st.text_input("Analista Suporte", value=ss.get("analista_suporte", ""))
+        with c2:
+            ss.analista_integradora = st.text_input(
+                "Analista Integradora (MAMINFO)",
+                value=ss.get("analista_integradora", ""),
+            )
+        with c3:
+            ss.analista_validador = st.text_input(
+                "Analista validador (NOC / Projetos)",
+                value=ss.get("analista_validador", ""),
+            )
 
-    c1, c2 = st.columns(2)
-    with c1:
-        ss.analista_suporte = st.text_input(
-            "Analista Suporte", value=ss.get("analista_suporte", "")
-        )
-        ss.analista_integradora = st.text_input(
-            "Analista Integradora (MAMINFO)", value=ss.get("analista_integradora", "")
-        )
-    with c2:
-        ss.analista_validador = st.text_input(
-            "Analista validador (NOC / Projetos)",
-            value=ss.get("analista_validador", ""),
-        )
-
-    # Tipo de atendimento (checklist)
-    default_tipo = ss.get("tipo_atendimento", [])
-    default_tipo = [x for x in default_tipo if x in TIPO_ATENDIMENTO_OPCOES]
-    ss.tipo_atendimento = st.multiselect(
-        "Tipo de Atendimento",
-        options=TIPO_ATENDIMENTO_OPCOES,
-        default=default_tipo,
-    )
-
-    ss.motivo_chamado = st.text_area(
-        "Anormalidade / Motivo do Chamado",
-        value=ss.get("motivo_chamado", ""),
-        height=90,
-    )
-
-    default_check = ss.get("checklist_tecnico_ok", [])
-    default_check = [x for x in default_check if x in CHECKLIST_TECNICO_OPCOES]
-    ss.checklist_tecnico_ok = st.multiselect(
-        "Checklist Técnico (SIM / NÃO)",
-        options=CHECKLIST_TECNICO_OPCOES,
-        default=default_check,
-        help="Selecione os itens verificados durante o atendimento.",
-    )
-
-
-def step_3_materiais_equip(ss):
-    st.subheader("3) Materiais & Equipamentos")
-
-    ss.material_utilizado = st.text_area(
-        "Material utilizado",
-        value=ss.get("material_utilizado", ""),
-        height=90,
-        placeholder="Ex.: 20m cabo UTP cat.6, 10 conectores RJ45, patch cords, etc.",
-    )
-
-    ss.equip_instalados = st.text_area(
-        "Equipamentos (Instalados)",
-        value=ss.get("equip_instalados", ""),
-        height=100,
-        placeholder="Ex.: AP Intelbras 3650 SN XXXXX, Switch Datacom DM2100 SN YYYYY...",
-    )
-
-    ss.equip_retirados = st.text_area(
-        "Equipamentos Retirados (se houver)",
-        value=ss.get("equip_retirados", ""),
-        height=80,
-        placeholder="Liste equipamentos retirados, se aplicável.",
-    )
-
-
-def step_4_observacoes(ss):
-    st.subheader("4) Observações")
-
-    default_testes = ss.get("testes_realizados", [])
-    default_testes = [x for x in default_testes if x in TESTES_REALIZADOS_OPCOES]
-    ss.testes_realizados = st.multiselect(
-        "Testes realizados (check list)",
-        options=TESTES_REALIZADOS_OPCOES,
-        default=default_testes,
-    )
-
-    ss.descricao_atendimento = st.text_area(
-        "Descrição do Atendimento (o que foi feito / resultado / evidências)",
-        value=ss.get("descricao_atendimento", ""),
-        height=140,
-    )
-
-    ss.observacoes_pendencias = st.text_area(
-        "Observações / Pendências",
-        value=ss.get("observacoes_pendencias", ""),
-        height=100,
-    )
-
-
-def step_5_aceite_assinaturas(ss):
-    st.subheader("5) Aceite & Assinaturas")
-
-    st.markdown("### Técnico MAMINFO")
-    col1, col2, col3, col4 = st.columns([1.5, 1.5, 1.2, 1.2])
-    with col1:
-        ss.tec_nome = st.text_input("Nome Técnico", value=ss.get("tec_nome", ""))
-    with col2:
-        ss.tec_documento = st.text_input(
-            "Documento Técnico", value=ss.get("tec_documento", "")
-        )
-    with col3:
-        ss.tec_telefone = st.text_input(
-            "Telefone Técnico", value=ss.get("tec_telefone", "")
-        )
-    with col4:
-        ss.tec_data = st.date_input(
-            "Data", value=ss.get("tec_data", date.today())
-        )
-        ss.tec_hora = st.time_input(
-            "Hora", value=ss.get("tec_hora", time(10, 0))
+        tipo_opts = [
+            "Instalação",
+            "Ativação",
+            "Manutenção",
+            "Retirada",
+            "Visita técnica",
+            "Outros",
+        ]
+        ss.tipo_atendimento = st.multiselect(
+            "Tipo de Atendimento",
+            options=tipo_opts,
+            default=[opt for opt in ss.get("tipo_atendimento", []) if opt in tipo_opts],
         )
 
-    st.markdown("---")
-
-    st.markdown("### Cliente / Responsável local")
-    c1, c2, c3, c4 = st.columns([1.5, 1.5, 1.2, 1.2])
-    with c1:
-        ss.cli_nome = st.text_input("Nome cliente", value=ss.get("cli_nome", ""))
-    with c2:
-        ss.cli_documento = st.text_input(
-            "Documento cliente", value=ss.get("cli_documento", "")
-        )
-    with c3:
-        ss.cli_telefone = st.text_input(
-            "Telefone cliente", value=ss.get("cli_telefone", "")
-        )
-    with c4:
-        ss.cli_data = st.date_input(
-            "Data ", value=ss.get("cli_data", date.today())
-        )
-        ss.cli_hora = st.time_input(
-            "Hora ", value=ss.get("cli_hora", time(10, 30))
+        ss.anormalidade = st.text_area(
+            "Anormalidade / Motivo do Chamado",
+            value=ss.get("anormalidade", ""),
+            height=100,
         )
 
-    st.markdown("---")
-    st.markdown("### Assinaturas (técnico e cliente)")
+        ss.checklist_tecnico_ok = st.radio(
+            "Checklist Técnico concluído?",
+            options=["SIM", "NÃO"],
+            index=(0 if ss.get("checklist_tecnico_ok", "SIM") == "SIM" else 1),
+            horizontal=True,
+        )
 
-    # Usa o mesmo componente de assinaturas que você já tem no projeto
-    assinatura_dupla_png()
+
+def render_step3(ss):
+    """
+    3) Materiais & Equipamentos
+    """
+    with st.container():
+        st.subheader("3) Materiais & Equipamentos")
+
+        ss.material_utilizado = st.text_area(
+            "Material utilizado",
+            value=ss.get("material_utilizado", ""),
+            height=130,
+        )
+
+        ss.equip_instalados = st.text_area(
+            "Equipamentos (Instalados)",
+            value=ss.get("equip_instalados", ""),
+            height=130,
+        )
+
+        ss.equip_retirados = st.text_area(
+            "Equipamentos Retirados (se houver)",
+            value=ss.get("equip_retirados", ""),
+            height=130,
+        )
 
 
-# ========= RENDER PRINCIPAL =========
+def render_step4(ss):
+    """
+    4) Observações + Fotos de seriais
+    """
+    with st.container():
+        st.subheader("4) Observações & Evidências")
+
+        testes_opts = [
+            "Ping",
+            "Chamadas",
+            "Navegação",
+            "Velocidade",
+            "VPN",
+            "Outros",
+        ]
+        ss.testes_realizados = st.multiselect(
+            "Testes realizados (check list)",
+            options=testes_opts,
+            default=[t for t in ss.get("testes_realizados", []) if t in testes_opts],
+        )
+
+        ss.descricao_atendimento = st.text_area(
+            "Descrição do Atendimento (o que foi feito / resultado / evidências)",
+            value=ss.get("descricao_atendimento", ""),
+            height=160,
+        )
+
+        ss.observacoes_pendencias = st.text_area(
+            "Observações / Pendências",
+            value=ss.get("observacoes_pendencias", ""),
+            height=120,
+        )
+
+        st.markdown("#### 📸 Fotos dos seriais (serão usadas a partir da página 3)")
+        uploaded = st.file_uploader(
+            "Anexe as fotos dos seriais (JPG, PNG, WEBP)",
+            type=["jpg", "jpeg", "png", "webp"],
+            accept_multiple_files=True,
+        )
+        if uploaded:
+            ss.fotos_seriais = [f.read() for f in uploaded]
+
+
+def render_step5(ss):
+    """
+    5) Aceite & Assinaturas
+    (campos de identificação do técnico e cliente;
+     assinatura em imagem pode ser adicionada depois, se quiser,
+     via common.ui.assinatura_dupla_png)
+    """
+    with st.container():
+        st.subheader("5) Aceite & Assinaturas")
+
+        st.markdown("##### Técnico MAMINFO")
+        c1, c2, c3, c4 = st.columns([2, 1.5, 1.5, 1.5])
+        with c1:
+            ss.nome_tecnico = st.text_input("Nome Técnico", value=ss.get("nome_tecnico", ""))
+        with c2:
+            ss.doc_tecnico = st.text_input("Documento Técnico", value=ss.get("doc_tecnico", ""))
+        with c3:
+            ss.tel_tecnico = st.text_input("Telefone Técnico", value=ss.get("tel_tecnico", ""))
+        with c4:
+            ss.data_hora_tecnico = st.text_input(
+                "Data e hora (Técnico)",
+                value=ss.get("data_hora_tecnico", ""),
+                help="Se deixar vazio, será preenchido automaticamente na geração.",
+            )
+
+        st.markdown("---")
+        st.markdown("##### Cliente")
+
+        c5, c6, c7, c8 = st.columns([2, 1.5, 1.5, 1.5])
+        with c5:
+            ss.nome_cliente = st.text_input("Nome cliente", value=ss.get("nome_cliente", ""))
+        with c6:
+            ss.doc_cliente = st.text_input("Documento cliente", value=ss.get("doc_cliente", ""))
+        with c7:
+            ss.tel_cliente = st.text_input("Telefone cliente", value=ss.get("tel_cliente", ""))
+        with c8:
+            ss.data_hora_cliente = st.text_input(
+                "Data e hora (Cliente)",
+                value=ss.get("data_hora_cliente", ""),
+                help="Se deixar vazio, será preenchido automaticamente na geração.",
+            )
+
+        st.markdown(
+            """
+            _As assinaturas poderão ser coletadas digitalmente ou manualmente
+            na impressão, conforme sua necessidade._
+            """
+        )
+
+
+# ---------- LAYOUT PRINCIPAL COM STEPPER ----------
 def render_layout():
     """
-    Renderiza todo o layout em modo escuro, controla steps e botão de gerar.
-    Usa st.session_state.step_unificado (1..5).
+    Função chamada pelo rat_unificado.render().
+    Desenha header, etapas e controla step (sem precisar clicar 2x).
     """
     apply_dark_full_layout()
     header_bar()
 
     ss = st.session_state
+    step = int(ss.get("step", 1))
 
-    if "step_unificado" not in ss:
-        ss.step_unificado = 1
-    step = int(ss.step_unificado)
-    step = max(1, min(5, step))
-    ss.step_unificado = step
+    st.markdown(f"#### Etapa {step} de 5")
 
-    st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
-    step_indicator(step)
-    st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
+    # Renderiza a etapa atual
+    if step == 1:
+        render_step1(ss)
+    elif step == 2:
+        render_step2(ss)
+    elif step == 3:
+        render_step3(ss)
+    elif step == 4:
+        render_step4(ss)
+    elif step == 5:
+        render_step5(ss)
 
-    # Card principal
-    with st.container():
-        st.markdown("<div class='rat-card'>", unsafe_allow_html=True)
+    st.markdown("---")
 
-        if step == 1:
-            step_1_dados_relatorio(ss)
-        elif step == 2:
-            step_2_atendimento_testes(ss)
-        elif step == 3:
-            step_3_materiais_equip(ss)
-        elif step == 4:
-            step_4_observacoes(ss)
-        elif step == 5:
-            step_5_aceite_assinaturas(ss)
+    col_back, col_next, col_generate = st.columns([1, 1, 2])
 
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
-
-    # Navegação + botão Gerar RAT
-    col_back, col_step, col_next = st.columns([1, 2, 1])
-
+    # Botão Voltar
     with col_back:
         if step > 1:
-            if st.button(
-                "⬅️ Voltar",
-                key=f"btn_back_step_{step}",
-                use_container_width=True,
-            ):
-                ss.step_unificado = max(1, step - 1)
+            if st.button("⬅️ Voltar", key="btn_voltar"):
+                ss.step = step - 1
+                st.experimental_rerun()
 
-    with col_step:
-        st.markdown(
-            f"<p style='text-align:center; color:#9ca3af;'>Etapa {step} de 5</p>",
-            unsafe_allow_html=True,
-        )
-
+    # Botão Próxima etapa
     with col_next:
         if step < 5:
-            if st.button(
-                "Próxima etapa ➡️",
-                key=f"btn_next_step_{step}",
-                use_container_width=True,
-            ):
-                ss.step_unificado = min(5, step + 1)
-        else:
-            if st.button(
-                "✅ Gerar RAT",
-                key="btn_gerar_rat",
-                use_container_width=True,
-            ):
+            if st.button("Próxima etapa ➡️", key="btn_proxima"):
+                ss.step = step + 1
+                st.experimental_rerun()
+
+    # Botão Gerar RAT (apenas na última etapa)
+    with col_generate:
+        if step == 5:
+            if st.button("🧾 Gerar RAT", key="btn_gerar_rat"):
                 ss.trigger_generate = True
+                # Não dou rerun aqui; o rat_unificado.render() é quem
+                # detecta trigger_generate e mostra o download
