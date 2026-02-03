@@ -283,45 +283,45 @@ def render_step4(ss):
 def render_step5(ss):
     
 elif step == 5:
-    st.markdown("### 5) Aceite & Assinaturas ↩")
+        st.markdown("### 5) Aceite & Assinaturas ↩")
+    
+        # --- Dados do técnico ---
+        st.markdown("#### Técnico MAMINFO")
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            ss.nome_tecnico = st.text_input("Nome Técnico", value=ss.get("nome_tecnico", ""))
+        with c2:
+            ss.doc_tecnico = st.text_input("Documento Técnico", value=ss.get("doc_tecnico", ""))
+        with c3:
+            ss.tel_tecnico = st.text_input("Telefone Técnico", value=ss.get("tel_tecnico", ""))
+        with c4:
+            ss.dt_tecnico = st.text_input("Data e hora (Técnico)", value=ss.get("dt_tecnico", ""))
 
-    # --- Dados do técnico ---
-    st.markdown("#### Técnico MAMINFO")
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        ss.nome_tecnico = st.text_input("Nome Técnico", value=ss.get("nome_tecnico", ""))
-    with c2:
-        ss.doc_tecnico = st.text_input("Documento Técnico", value=ss.get("doc_tecnico", ""))
-    with c3:
-        ss.tel_tecnico = st.text_input("Telefone Técnico", value=ss.get("tel_tecnico", ""))
-    with c4:
-        ss.dt_tecnico = st.text_input("Data e hora (Técnico)", value=ss.get("dt_tecnico", ""))
-
-    st.markdown("---")
+        st.markdown("---")  
 
     # --- Dados do cliente ---
-    st.markdown("#### Cliente")
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        ss.nome_cliente = st.text_input("Nome cliente", value=ss.get("nome_cliente", ""))
-    with c2:
-        ss.doc_cliente = st.text_input("Documento cliente", value=ss.get("doc_cliente", ""))
-    with c3:
-        ss.tel_cliente = st.text_input("Telefone cliente", value=ss.get("tel_cliente", ""))
-    with c4:
-        ss.dt_cliente = st.text_input("Data e hora (Cliente)", value=ss.get("dt_cliente", ""))
+        st.markdown("#### Cliente")
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            ss.nome_cliente = st.text_input("Nome cliente", value=ss.get("nome_cliente", ""))
+        with c2:
+            ss.doc_cliente = st.text_input("Documento cliente", value=ss.get("doc_cliente", ""))
+        with c3:
+            ss.tel_cliente = st.text_input("Telefone cliente", value=ss.get("tel_cliente", ""))
+        with c4:
+            ss.dt_cliente = st.text_input("Data e hora (Cliente)", value=ss.get("dt_cliente", ""))
 
-    st.markdown("---")
+        st.markdown("---")
 
     # --- Assinaturas digitais ---
-    st.markdown("#### Assinaturas (opcional)")
-    st.caption(
-        "Você pode coletar as assinaturas digitais aqui, ou deixar para assinar manualmente "
-        "no papel após a impressão."
-    )
+        st.markdown("#### Assinaturas (opcional)")
+        st.caption(
+            "Você pode coletar as assinaturas digitais aqui, ou deixar para assinar manualmente "
+            "no papel após a impressão."
+        )
 
-    # Essa função já cuida de dois campos: assinatura do técnico e do cliente
-    assinatura_dupla_png()
+        #   Essa função já cuida de dois campos: assinatura do técnico e do cliente
+        assinatura_dupla_png()
 
 
 
