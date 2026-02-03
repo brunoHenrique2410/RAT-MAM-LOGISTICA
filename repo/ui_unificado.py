@@ -25,7 +25,7 @@ PROJECT_ROOT = os.path.dirname(THIS_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-LOGO_PATH = os.path.join(PROJECT_ROOT, "assets", "evernex_logo.png")  # ajuste o nome se for diferente
+LOGO_PATH = os.path.join(PROJECT_ROOT, "assets", "selo_evernex_maminfo.png")  # ajuste o nome se for diferente
 
 
 # ---------- ESTILO DARK FULL ----------
