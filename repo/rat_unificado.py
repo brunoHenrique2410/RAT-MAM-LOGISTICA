@@ -283,7 +283,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         ["Endereço Completo", "Endereço completo", "Endereco Completo"],
         ss.endereco_completo,
         width=500,
-        y_offset=39,
+        y_offset=80,
         height=90,
         fontsize=9,
         align=0,
