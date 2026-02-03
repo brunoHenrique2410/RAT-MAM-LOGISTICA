@@ -28,6 +28,7 @@ from common.pdf import (
     insert_right_of,
     insert_textbox,
     mark_X_left_of,
+    insert_signature_png,   # <-- para assinaturas
 )
 import ui_unificado  # layout / abas / modo escuro
 
@@ -69,10 +70,9 @@ def _init_rat_defaults() -> None:
             "analista_integradora": "",
             "analista_validador": "",
             "tipo_atendimento": "",          # ex.: "Instalação", "Ativação"...
-            # para futuro: lista de flags de anormalidade
             "anormalidade_flags": [],        # ex.: ["Interrupção total", "Lentidão"]
             "motivo_chamado": "",            # fallback texto livre
-            # checklist técnico – por enquanto texto; no futuro pode virar dict
+            # checklist técnico – agora dicionário {item: "Sim"/"Não"}
             "checklist_tecnico": {},
             # --------- BLOCO 3 – Materiais & Equipamentos ---------
             "material_utilizado": "",
@@ -130,7 +130,7 @@ def _safe_distancia_txt(ss) -> str:
 def _mark_tipo_atendimento(page: fitz.Page, tipo: str) -> None:
     """
     Marca X no checkbox do Tipo de Atendimento, de acordo com o valor vindo da UI.
-    Se não bater nenhuma opção, não faz nada (ou deixamos fallback em texto).
+    Se não bater nenhuma opção, não faz nada.
     """
     if not tipo:
         return
@@ -157,7 +157,6 @@ def _mark_tipo_atendimento(page: fitz.Page, tipo: str) -> None:
         mx("Passagem de cabo")
     elif "outro" in t:
         mx("Outros")
-    # senão, deixa passar em branco (pode complementar com texto manual se quiser)
 
 
 def _mark_anormalidades(page: fitz.Page, flags) -> None:
@@ -174,7 +173,6 @@ def _mark_anormalidades(page: fitz.Page, flags) -> None:
     def mx(label: str):
         mark_X_left_of(page, label, dx=-10, dy=0, fontsize=11)
 
-    # mapeamento bem solto, para pegar as principais frases
     for f in norm:
         if "interrup" in f or "total" in f:
             mx("Interrupção total")
@@ -196,8 +194,48 @@ def _mark_anormalidades(page: fitz.Page, flags) -> None:
             mx("Outros")
 
 
-# (Checklist Técnico em X é mais chato porque depende dos "Sim"/"Não" do template.
-#  Por enquanto mantemos em texto, mas dá pra evoluir depois.)
+def _mark_checklist_tecnico(page: fitz.Page, checklist_dict) -> None:
+    """
+    Marca X no 5. Checklist Técnico (SIM / NÃO) em cima dos quadradinhos
+    de SIM ou NÃO, de acordo com o dicionário vindo da UI.
+
+    checklist_dict = {
+        "Circuito corretamente instalado": "Sim",
+        "Teste de circuito comutado": "Não",
+        ...
+    }
+
+    OBS: offsets (dx_sim / dx_nao) podem ser ajustados depois conforme o template.
+    """
+    if not isinstance(checklist_dict, dict) or not checklist_dict:
+        return
+
+    # deslocamentos a partir do fim do texto do item
+    # (ajuste fino depois olhando o PDF)
+    dx_sim = 150   # coluna "Sim"
+    dx_nao = 220   # coluna "Não"
+
+    for item, resp in checklist_dict.items():
+        if resp not in ("Sim", "Não"):
+            continue
+
+        try:
+            rects = page.search_for(item)
+        except Exception:
+            rects = []
+
+        if not rects:
+            continue
+
+        r = rects[0]  # primeira ocorrência
+        y = (r.y0 + r.y1) / 2.0
+
+        if resp == "Sim":
+            x = r.x1 + dx_sim
+        else:
+            x = r.x1 + dx_nao
+
+        page.insert_text((x, y), "X", fontsize=11)
 
 
 # =============== PÁGINA 1 ===============
@@ -277,7 +315,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         dy=15,
     )
 
-    # Endereço Completo – descer ~39 "px"
+    # Endereço Completo – caixa de texto (você já ajustou no template)
     insert_textbox(
         page,
         ["Endereço Completo", "Endereço completo", "Endereco Completo"],
@@ -291,7 +329,6 @@ def _fill_page1(page: fitz.Page, ss) -> None:
 
     # ---------- 2) Dados Operacionais ----------
 
-    # Analista Suporte – descer 25 / 40 pra esquerda
     insert_right_of(
         page,
         ["Analista Suporte"],
@@ -300,7 +337,6 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         dy=15,
     )
 
-    # Analista Integradora – descer 25 / 40 pra esquerda
     insert_right_of(
         page,
         ["Analista Integradora (MAMINFO)", "Analista Integradora"],
@@ -309,7 +345,6 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         dy=15,
     )
 
-    # Analista validador – descer 25 / 40 pra esquerda
     insert_right_of(
         page,
         ["Analista validador (NOC / Projetos)", "Analista validador"],
@@ -325,7 +360,6 @@ def _fill_page1(page: fitz.Page, ss) -> None:
 
     data_str = _safe_date_to_str(ss.data_atendimento)
 
-    # Data – descer 15 e separar mais o espaçamento
     insert_right_of(
         page,
         ["Data", "Data do atendimento", "Data do Atendimento"],
@@ -334,7 +368,6 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         dy=15,
     )
 
-    # Início – descer 15
     insert_right_of(
         page,
         ["Início", "Inicio"],
@@ -343,7 +376,6 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         dy=15,
     )
 
-    # Término – descer 15
     insert_right_of(
         page,
         ["Término", "Termino"],
@@ -352,7 +384,6 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         dy=15,
     )
 
-    # Distância (KM) – descer 15
     insert_right_of(
         page,
         ["Distância (KM)", "Distancia (KM)"],
@@ -363,11 +394,9 @@ def _fill_page1(page: fitz.Page, ss) -> None:
 
     # ---------- 4) Anormalidade / Motivo do Chamado ----------
 
-    # Primeiro tentamos marcar X se vier lista de flags
     flags = getattr(ss, "anormalidade_flags", None)
     _mark_anormalidades(page, flags)
 
-    # Fallback: texto livre (caso ainda não tenha migrado para lista)
     if not flags:
         insert_textbox(
             page,
@@ -386,34 +415,33 @@ def _fill_page1(page: fitz.Page, ss) -> None:
 
     # ---------- 5) Checklist Técnico (SIM / NÃO) ----------
 
-    # Por enquanto: texto único com as marcações escolhidas.
-    # Se depois você tiver um dict de {item: "Sim"/"Não"}, dá pra evoluir pra marcar X.
-    checklist_txt = ""
     cl = getattr(ss, "checklist_tecnico", None)
-    if isinstance(cl, dict):
-        partes = []
-        for k, v in cl.items():
-            partes.append(f"{k}: {v}")
-        checklist_txt = " | ".join(partes)
-    elif isinstance(cl, (list, tuple)):
-        checklist_txt = " | ".join(str(x) for x in cl)
 
-    if checklist_txt:
-        insert_textbox(
-            page,
-            [
-                "5. Checklist Técnico (SIM / NÃO)",
-                "Checklist Técnico (SIM / NÃO)",
-                "Checklist Técnico",
-                "Checklist Tecnico",
-            ],
-            checklist_txt,
-            width=520,
-            y_offset=20,
-            height=90,
-            fontsize=9,
-            align=0,
-        )
+    # Se for dicionário (caso atual da UI), marcamos X em SIM / NÃO
+    if isinstance(cl, dict) and cl:
+        _mark_checklist_tecnico(page, cl)
+    else:
+        # fallback: texto único
+        checklist_txt = ""
+        if isinstance(cl, (list, tuple)):
+            checklist_txt = " | ".join(str(x) for x in cl)
+
+        if checklist_txt:
+            insert_textbox(
+                page,
+                [
+                    "5. Checklist Técnico (SIM / NÃO)",
+                    "Checklist Técnico (SIM / NÃO)",
+                    "Checklist Técnico",
+                    "Checklist Tecnico",
+                ],
+                checklist_txt,
+                width=520,
+                y_offset=20,
+                height=90,
+                fontsize=9,
+                align=0,
+            )
 
 
 # =============== PÁGINA 2 ===============
@@ -509,7 +537,7 @@ def _fill_page2(page: fitz.Page, ss) -> None:
 
     # ---------- 5) Aceite & Assinaturas ----------
 
-    # Técnico MAMINFO
+    # Técnico MAMINFO – textos
     insert_right_of(
         page,
         ["Nome Técnico", "Nome Tecnico"],
@@ -539,7 +567,7 @@ def _fill_page2(page: fitz.Page, ss) -> None:
         dy=1,
     )
 
-    # Cliente
+    # Cliente – textos
     insert_right_of(
         page,
         ["Nome cliente", "Nome Cliente"],
@@ -568,6 +596,26 @@ def _fill_page2(page: fitz.Page, ss) -> None:
         dx=8,
         dy=1,
     )
+
+    # Assinaturas (PNG) – Técnico e Cliente
+    # OBS: offsets são aproximados; se ficarem fora do lugar, a gente ajusta.
+    if ss.sig_tec_png:
+        insert_signature_png(
+            page,
+            ["Técnico MAMINFO", "Tecnico MAMINFO", "Técnico MAMINFO (assinatura)"],
+            ss.sig_tec_png,
+            rel_rect=(0, -40, 200, -5),  # largura/altura aproximadas acima do texto
+            occurrence=1,
+        )
+
+    if ss.sig_cli_png:
+        insert_signature_png(
+            page,
+            ["Cliente (assinatura)", "Cliente", "Cliente Assinatura"],
+            ss.sig_cli_png,
+            rel_rect=(0, -40, 200, -5),
+            occurrence=1,
+        )
 
 
 # =============== GERAÇÃO DO PDF ===============
