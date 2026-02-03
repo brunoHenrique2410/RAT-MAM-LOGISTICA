@@ -158,8 +158,8 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         page,
         ["Operadora / Contrato", "Operadora/Contrato", "Operadora Contrato"],
         ss.operadora_contrato,
-        dx=2,   # encosta mais
-        dy=3,   # desce um pouco
+        dx=1,   # encosta mais
+        dy=5,   # desce um pouco
     )
 
     insert_right_of(
