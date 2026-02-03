@@ -3,17 +3,17 @@
 # RAT MAM UNIFICADA – 2 PÁGINAS
 # Template: pdf_templates/RAT_MAM_UNIFICADA_VF.pdf
 #
-# Página 1:
-#   1. Identificação do Atendimento
-#   2. Dados Operacionais
-#   3. Horários e Deslocamento
-#   4. Anormalidade / Motivo do Chamado
-#   5. Checklist Técnico (SIM / NÃO)
+# Pág. 1:
+#   1) Identificação do Atendimento
+#   2) Dados Operacionais
+#   3) Horários e Deslocamento
+#   4) Anormalidade / Motivo do Chamado
+#   5) Checklist Técnico (SIM / NÃO)
 #
-# Página 2:
-#   3. Materiais & Equipamentos
-#   4. Observações
-#   5. Aceite & Assinaturas
+# Pág. 2:
+#   3) Materiais & Equipamentos
+#   4) Observações
+#   5) Aceite & Assinaturas
 
 import os
 from io import BytesIO
@@ -27,6 +27,7 @@ from common.pdf import (
     open_pdf_template,
     insert_right_of,
     insert_textbox,
+    mark_X_left_of,
 )
 import ui_unificado  # layout / abas / modo escuro
 
@@ -67,15 +68,18 @@ def _init_rat_defaults() -> None:
             "analista_suporte": "",
             "analista_integradora": "",
             "analista_validador": "",
-            "tipo_atendimento": "",
-            "motivo_chamado": "",
-            "checklist_tecnico": [],  # lista de strings (UI marca SIM)
+            "tipo_atendimento": "",          # ex.: "Instalação", "Ativação"...
+            # para futuro: lista de flags de anormalidade
+            "anormalidade_flags": [],        # ex.: ["Interrupção total", "Lentidão"]
+            "motivo_chamado": "",            # fallback texto livre
+            # checklist técnico – por enquanto texto; no futuro pode virar dict
+            "checklist_tecnico": [],
             # --------- BLOCO 3 – Materiais & Equipamentos ---------
             "material_utilizado": "",
             "equip_instalados": "",
             "equip_retirados": "",
             # --------- BLOCO 4 – Observações ---------
-            "testes_realizados": [],  # lista de strings
+            "testes_realizados": [],
             "descricao_atendimento": "",
             "observacoes_pendencias": "",
             # --------- BLOCO 5 – Aceite & Assinaturas ---------
@@ -104,7 +108,8 @@ def _safe_date_to_str(value) -> str:
             d = value
         else:
             d = date.fromisoformat(str(value))
-        return d.strftime("%d/%m/%Y")
+        # formato separado, com mais espaço entre dia/mes/ano
+        return f"{d.day:02d}   {d.month:02d}   {d.year:04d}"
     except Exception:
         return str(value or "")
 
@@ -122,6 +127,79 @@ def _safe_distancia_txt(ss) -> str:
         return str(getattr(ss, "distancia_km", ""))
 
 
+def _mark_tipo_atendimento(page: fitz.Page, tipo: str) -> None:
+    """
+    Marca X no checkbox do Tipo de Atendimento, de acordo com o valor vindo da UI.
+    Se não bater nenhuma opção, não faz nada (ou deixamos fallback em texto).
+    """
+    if not tipo:
+        return
+
+    t = tipo.strip().lower()
+
+    def mx(label: str):
+        # pequeno deslocamento pra encaixar na caixinha
+        mark_X_left_of(page, label, dx=-10, dy=0, fontsize=11)
+
+    if "instala" in t:
+        mx("Instalação")
+    elif "ativ" in t:
+        mx("Ativação")
+    elif "manut" in t and "corre" in t:
+        mx("Manut. Corretiva")
+    elif "manut" in t and "preven" in t:
+        mx("Manut. Preventiva")
+    elif "verif" in t:
+        mx("Verificação")
+    elif "retir" in t:
+        mx("Retirada")
+    elif "pass" in t and "cabo" in t:
+        mx("Passagem de cabo")
+    elif "outro" in t:
+        mx("Outros")
+    # senão, deixa passar em branco (pode complementar com texto manual se quiser)
+
+
+def _mark_anormalidades(page: fitz.Page, flags) -> None:
+    """
+    Marca X nas opções de "Anormalidade / Motivo do Chamado"
+    se receber uma lista de strings (flags). Caso contrário, não faz nada.
+    """
+    if not flags or not isinstance(flags, (list, tuple, set)):
+        return
+
+    # normaliza para lower
+    norm = [str(f).strip().lower() for f in flags]
+
+    def mx(label: str):
+        mark_X_left_of(page, label, dx=-10, dy=0, fontsize=11)
+
+    # mapeamento bem solto, para pegar as principais frases
+    for f in norm:
+        if "interrup" in f or "total" in f:
+            mx("Interrupção total")
+        if "sincron" in f:
+            mx("Sem sincronismo")
+        if "mensagem" in f or "erro" in f:
+            mx("Mensagem com erro")
+        if "intermit" in f or "queda" in f:
+            mx("Intermitência / Quedas")
+        if "taxa" in f:
+            mx("Taxa de erro")
+        if "portadora" in f:
+            mx("Sem portadora")
+        if "lentidao" in f or "lentidão" in f:
+            mx("Lentidão")
+        if "ruido" in f or "ruído" in f:
+            mx("Ruído")
+        if "outro" in f:
+            mx("Outros")
+
+
+# (Checklist Técnico em X é mais chato porque depende dos "Sim"/"Não" do template.
+#  Por enquanto mantemos em texto, mas dá pra evoluir depois.)
+
+
 # =============== PÁGINA 1 ===============
 
 
@@ -131,35 +209,37 @@ def _fill_page1(page: fitz.Page, ss) -> None:
     1. Identificação
     2. Dados Operacionais
     3. Horários e Deslocamento
-    4. Anormalidade / Motivo
+    4. Anormalidade / Motivo do Chamado
     5. Checklist Técnico
     """
 
     # ---------- 1) Identificação do Atendimento ----------
 
+    # Nº Chamado – descer 20 "px"
     insert_right_of(
         page,
         ["Nº Chamado", "N° Chamado", "No Chamado", "Numero Chamado"],
         ss.num_chamado,
         dx=8,
-        dy=1,
+        dy=20,
     )
 
+    # Nº Relatório – descer 20 "px"
     insert_right_of(
         page,
         ["Nº Relatório", "N° Relatório", "No Relatório", "Numero Relatório"],
         ss.num_relatorio,
         dx=8,
-        dy=1,
+        dy=20,
     )
 
-    # Operadora / Contrato -> um pouco mais pra esquerda e mais baixo
+    # Operadora / Contrato -> descer 15 e ~100px para a esquerda
     insert_right_of(
         page,
         ["Operadora / Contrato", "Operadora/Contrato", "Operadora Contrato"],
         ss.operadora_contrato,
-        dx=1,   # encosta mais
-        dy=5,   # desce um pouco
+        dx=-25,   # move pra esquerda
+        dy=15,    # desce
     )
 
     insert_right_of(
@@ -185,7 +265,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         ["Contato (nome)", "Contato", "Contato (Nome)"],
         ss.contato_nome,
         dx=8,
-        dy=3,
+        dy=6,
     )
 
     # Telefone / E-mail – descer um pouco
@@ -194,16 +274,16 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         ["Telefone / E-mail", "Telefone/E-mail", "Telefone / Email"],
         ss.contato_telefone_email,
         dx=8,
-        dy=3,
+        dy=6,
     )
 
-    # Endereço Completo – subir ~1cm
+    # Endereço Completo – descer ~39 "px"
     insert_textbox(
         page,
         ["Endereço Completo", "Endereço completo", "Endereco Completo"],
         ss.endereco_completo,
         width=520,
-        y_offset=-20,  # sobe a caixa
+        y_offset=39,
         height=70,
         fontsize=9,
         align=0,
@@ -211,110 +291,129 @@ def _fill_page1(page: fitz.Page, ss) -> None:
 
     # ---------- 2) Dados Operacionais ----------
 
-    # Campos individuais nos retângulos
+    # Analista Suporte – descer 25 / 40 pra esquerda
     insert_right_of(
         page,
         ["Analista Suporte"],
         ss.analista_suporte,
-        dx=8,
-        dy=1,
+        dx=-20,
+        dy=25,
     )
+
+    # Analista Integradora – descer 25 / 40 pra esquerda
     insert_right_of(
         page,
         ["Analista Integradora (MAMINFO)", "Analista Integradora"],
         ss.analista_integradora,
-        dx=8,
-        dy=1,
+        dx=-20,
+        dy=25,
     )
+
+    # Analista validador – descer 25 / 40 pra esquerda
     insert_right_of(
         page,
         ["Analista validador (NOC / Projetos)", "Analista validador"],
         ss.analista_validador,
-        dx=8,
-        dy=1,
+        dx=-20,
+        dy=25,
     )
-    insert_right_of(
-        page,
-        ["Tipo de Atendimento"],
-        ss.tipo_atendimento,
-        dx=8,
-        dy=1,
-    )
+
+    # Tipo de Atendimento – marca X na opção escolhida
+    _mark_tipo_atendimento(page, getattr(ss, "tipo_atendimento", ""))
 
     # ---------- 3) Horários e Deslocamento ----------
 
     data_str = _safe_date_to_str(ss.data_atendimento)
 
+    # Data – descer 15 e separar mais o espaçamento
     insert_right_of(
         page,
         ["Data", "Data do atendimento", "Data do Atendimento"],
         data_str,
         dx=8,
-        dy=6,  # desce ~0,5cm em relação ao label
+        dy=15,
     )
 
+    # Início – descer 15
     insert_right_of(
         page,
         ["Início", "Inicio"],
         ss.inicio_atend,
         dx=8,
-        dy=6,
+        dy=15,
     )
 
+    # Término – descer 15
     insert_right_of(
         page,
         ["Término", "Termino"],
         ss.termino_atend,
         dx=8,
-        dy=6,
+        dy=15,
     )
 
+    # Distância (KM) – descer 15
     insert_right_of(
         page,
         ["Distância (KM)", "Distancia (KM)"],
         _safe_distancia_txt(ss),
         dx=8,
-        dy=6,
+        dy=15,
     )
 
     # ---------- 4) Anormalidade / Motivo do Chamado ----------
 
-    insert_textbox(
-        page,
-        [
-            "4. Anormalidade / Motivo do Chamado",
-            "Anormalidade / Motivo do Chamado",
-            "Anormalidade/Motivo do Chamado",
-        ],
-        ss.motivo_chamado,
-        width=520,
-        y_offset=20,
-        height=80,
-        fontsize=9,
-        align=0,
-    )
+    # Primeiro tentamos marcar X se vier lista de flags
+    flags = getattr(ss, "anormalidade_flags", None)
+    _mark_anormalidades(page, flags)
+
+    # Fallback: texto livre (caso ainda não tenha migrado para lista)
+    if not flags:
+        insert_textbox(
+            page,
+            [
+                "4. Anormalidade / Motivo do Chamado",
+                "Anormalidade / Motivo do Chamado",
+                "Anormalidade/Motivo do Chamado",
+            ],
+            ss.motivo_chamado,
+            width=520,
+            y_offset=20,
+            height=80,
+            fontsize=9,
+            align=0,
+        )
 
     # ---------- 5) Checklist Técnico (SIM / NÃO) ----------
 
+    # Por enquanto: texto único com as marcações escolhidas.
+    # Se depois você tiver um dict de {item: "Sim"/"Não"}, dá pra evoluir pra marcar X.
     checklist_txt = ""
-    if isinstance(ss.checklist_tecnico, list) and ss.checklist_tecnico:
-        checklist_txt = " | ".join(ss.checklist_tecnico)
+    cl = getattr(ss, "checklist_tecnico", None)
+    if isinstance(cl, dict):
+        partes = []
+        for k, v in cl.items():
+            partes.append(f"{k}: {v}")
+        checklist_txt = " | ".join(partes)
+    elif isinstance(cl, (list, tuple)):
+        checklist_txt = " | ".join(str(x) for x in cl)
 
-    insert_textbox(
-        page,
-        [
-            "5. Checklist Técnico (SIM / NÃO)",
-            "Checklist Técnico (SIM / NÃO)",
-            "Checklist Técnico",
-            "Checklist Tecnico",
-        ],
-        checklist_txt,
-        width=520,
-        y_offset=20,
-        height=90,
-        fontsize=9,
-        align=0,
-    )
+    if checklist_txt:
+        insert_textbox(
+            page,
+            [
+                "5. Checklist Técnico (SIM / NÃO)",
+                "Checklist Técnico (SIM / NÃO)",
+                "Checklist Técnico",
+                "Checklist Tecnico",
+            ],
+            checklist_txt,
+            width=520,
+            y_offset=20,
+            height=90,
+            fontsize=9,
+            align=0,
+        )
 
 
 # =============== PÁGINA 2 ===============
@@ -326,7 +425,6 @@ def _fill_page2(page: fitz.Page, ss) -> None:
       3. Materiais & Equipamentos
       4. Observações
       5. Aceite & Assinaturas
-    (Os rótulos exatos dependem do seu PDF; ajustamos pelos textos.)
     """
 
     # ---------- 3) Materiais & Equipamentos ----------
@@ -374,17 +472,18 @@ def _fill_page2(page: fitz.Page, ss) -> None:
     if isinstance(ss.testes_realizados, list) and ss.testes_realizados:
         testes_txt = " | ".join(ss.testes_realizados)
 
-    insert_textbox(
-        page,
-        ["Testes realizados", "Testes executados"],
-        testes_txt,
-        width=520,
-        y_offset=20,
-        height=70,
-        fontsize=9,
-        align=0,
-        occurrence=2,  # se existir mais de um label parecido
-    )
+    if testes_txt:
+        insert_textbox(
+            page,
+            ["Testes realizados", "Testes executados"],
+            testes_txt,
+            width=520,
+            y_offset=20,
+            height=70,
+            fontsize=9,
+            align=0,
+            occurrence=1,
+        )
 
     insert_textbox(
         page,
@@ -469,8 +568,6 @@ def _fill_page2(page: fitz.Page, ss) -> None:
         dx=8,
         dy=1,
     )
-
-    # (Se quiser depois, dá pra inserir assinaturas PNG aqui usando common.pdf.insert_signature_png)
 
 
 # =============== GERAÇÃO DO PDF ===============
