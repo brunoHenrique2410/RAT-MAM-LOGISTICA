@@ -1,9 +1,12 @@
 # repo/rat_unificado.py
 #
 # RAT MAM UNIFICADA – lógica de estado + geração de PDF.
-# Usa:
-#  - ui_unificado.render_layout() para desenhar o formulário (abas)
-#  - RAT_MAM_UNIFICADA_VF.pdf como template base
+# Template: RAT_MAM_UNIFICADA_VF.pdf (1 página)
+#
+# Este módulo:
+#  - Inicializa o session_state da RAT
+#  - Usa ui_unificado.render_layout() para desenhar o formulário em abas
+#  - Gera o PDF preenchendo a própria página 1 do template
 
 import os
 from io import BytesIO
@@ -18,7 +21,7 @@ from common.pdf import (
     insert_right_of,
     insert_textbox,
 )
-import ui_unificado  # nosso layout em abas
+import ui_unificado  # layout em abas (modo escuro, etc.)
 
 
 # =============== PATHS / CONSTANTES ===============
@@ -40,34 +43,35 @@ def _init_rat_defaults() -> None:
     """
     init_defaults(
         {
-            # --------- ETAPA 1 ---------
+            # --------- BLOCO 1 – Identificação / Local ---------
             "num_relatorio": "",
             "num_chamado": "",
             "operadora_contrato": "",
             "cliente_razao": "",
-            "distancia_km": "",
-            "inicio_atend": "",
-            "termino_atend": "",
+            "cnpj_cpf": "",
             "contato_nome": "",
             "contato_telefone_email": "",
             "endereco_completo": "",
+            "distancia_km": "",
+            "inicio_atend": "",
+            "termino_atend": "",
             "data_atendimento": datetime.now().date().isoformat(),
-            # --------- ETAPA 2 ---------
+            # --------- BLOCO 2 – Atendimento & Testes ---------
             "analista_suporte": "",
             "analista_integradora": "",
             "analista_validador": "",
             "tipo_atendimento": "",
             "motivo_chamado": "",
-            "checklist_tecnico": [],
-            # --------- ETAPA 3 ---------
+            "checklist_tecnico": [],  # lista de strings
+            # --------- BLOCO 3 – Materiais & Equipamentos ---------
             "material_utilizado": "",
             "equip_instalados": "",
             "equip_retirados": "",
-            # --------- ETAPA 4 ---------
-            "testes_realizados": [],
+            # --------- BLOCO 4 – Observações ---------
+            "testes_realizados": [],  # lista de strings
             "descricao_atendimento": "",
             "observacoes_pendencias": "",
-            # --------- ETAPA 5 ---------
+            # --------- BLOCO 5 – Aceite & Assinaturas ---------
             "nome_tecnico": "",
             "doc_tecnico": "",
             "tel_tecnico": "",
@@ -76,6 +80,7 @@ def _init_rat_defaults() -> None:
             "doc_cliente": "",
             "tel_cliente": "",
             "dt_cliente": "",
+            # Assinaturas em PNG – se você usar depois
             "sig_tec_png": None,
             "sig_cli_png": None,
             # --------- CONTROLE ---------
@@ -84,23 +89,18 @@ def _init_rat_defaults() -> None:
     )
 
 
-# =============== PREENCHIMENTO DO PDF ===============
+# =============== PREENCHIMENTO DO PDF (1 PÁGINA) ===============
 
 
-def _fill_page1(page: fitz.Page, ss) -> None:
+def _fill_page(page: fitz.Page, ss) -> None:
     """
-    Preenche a PÁGINA 1 da RAT unificada:
-    1) Dados do Relatório & Local de Atendimento.
+    Preenche a única página da RAT unificada (RAT_MAM_UNIFICADA_VF.pdf)
+    com TODOS os blocos (1 a 6 do modelo).
     """
 
-    # Nº Relatório / Nº Chamado / Operadora / Cliente
-    insert_right_of(
-        page,
-        ["Nº Relatório", "N° Relatório", "No Relatório", "Numero Relatório"],
-        ss.num_relatorio,
-        dx=8,
-        dy=1,
-    )
+    # ---------- 1) Identificação do Atendimento ----------
+
+    # Nº Chamado
     insert_right_of(
         page,
         ["Nº Chamado", "N° Chamado", "No Chamado", "Numero Chamado"],
@@ -108,13 +108,26 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         dx=8,
         dy=1,
     )
+
+    # Nº Relatório
+    insert_right_of(
+        page,
+        ["Nº Relatório", "N° Relatório", "No Relatório", "Numero Relatório"],
+        ss.num_relatorio,
+        dx=8,
+        dy=1,
+    )
+
+    # Operadora / Contrato – descer e ir um pouco mais pra esquerda
     insert_right_of(
         page,
         ["Operadora / Contrato", "Operadora/Contrato", "Operadora Contrato"],
         ss.operadora_contrato,
-        dx=8,
-        dy=1,
+        dx=2,   # mais perto do rótulo
+        dy=3,   # um pouco mais baixo
     )
+
+    # Cliente / Razão Social
     insert_right_of(
         page,
         ["Cliente / Razão Social", "Cliente/Razão Social", "Cliente / Razao Social"],
@@ -123,69 +136,120 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         dy=1,
     )
 
-    # Início / Término (como texto livre HH:MM)
-    insert_right_of(
-        page,
-        ["Início", "Inicio"],
-        ss.inicio_atend,
-        dx=8,
-        dy=1,
-    )
-    insert_right_of(
-        page,
-        ["Término", "Termino"],
-        ss.termino_atend,
-        dx=8,
-        dy=1,
-    )
+    # CNPJ/CPF (se você quiser usar – está no template)
+    if getattr(ss, "cnpj_cpf", ""):
+        insert_right_of(
+            page,
+            ["CNPJ/CPF", "CNPJ / CPF"],
+            ss.cnpj_cpf,
+            dx=8,
+            dy=1,
+        )
 
-    # Contato + Telefone / E-mail
+    # Contato (nome) – descer um pouco
     insert_right_of(
         page,
-        ["Contato", "Contato (nome)"],
+        ["Contato (nome)", "Contato", "Contato (Nome)"],
         ss.contato_nome,
         dx=8,
-        dy=1,
+        dy=3,
     )
+
+    # Telefone / E-mail – descer um pouco
     insert_right_of(
         page,
         ["Telefone / E-mail", "Telefone/E-mail", "Telefone / Email"],
         ss.contato_telefone_email,
         dx=8,
-        dy=1,
+        dy=3,
     )
 
-    # Endereço completo – geralmente é um bloco maior
+    # Endereço Completo – subir ~1 cm (offset negativo)
     insert_textbox(
         page,
         ["Endereço Completo", "Endereço completo", "Endereco Completo"],
         ss.endereco_completo,
         width=520,
-        y_offset=20,
-        height=80,
+        y_offset=-20,   # antes era ~20; negativo sobe a caixa
+        height=70,
         fontsize=9,
         align=0,
     )
 
-    # --- DISTÂNCIA (KM) ---
-    try:
-        # converte string tipo "12,5" ou "12.5" para float
-        dist_raw = str(getattr(ss, "distancia_km", "")).strip()
-        dist_val = float(dist_raw.replace(",", "."))
-        dist_txt = f"{dist_val:.1f}".replace(".", ",")  # 1 casa, vírgula
-    except Exception:
-        # se não conseguir converter, usa o texto cru
-        dist_txt = str(getattr(ss, "distancia_km", ""))
+    # ---------- 2) Dados Operacionais ----------
 
+    # Campo-resumo embaixo do título "2. Dados Operacionais"
+    resumo_oper = ""
+    if any(
+        [
+            ss.analista_suporte,
+            ss.analista_integradora,
+            ss.analista_validador,
+            ss.tipo_atendimento,
+        ]
+    ):
+        partes = []
+        if ss.analista_suporte:
+            partes.append(f"Suporte: {ss.analista_suporte}")
+        if ss.analista_integradora:
+            partes.append(f"Integradora: {ss.analista_integradora}")
+        if ss.analista_validador:
+            partes.append(f"Validador: {ss.analista_validador}")
+        if ss.tipo_atendimento:
+            partes.append(f"Tipo: {ss.tipo_atendimento}")
+        resumo_oper = " | ".join(partes)
+
+    if resumo_oper:
+        insert_textbox(
+            page,
+            ["2. Dados Operacionais", "Dados Operacionais"],
+            resumo_oper,
+            width=520,
+            y_offset=12,
+            height=40,
+            fontsize=8,
+            align=0,
+        )
+
+    # Analista Suporte (caixa própria logo abaixo do título)
     insert_right_of(
         page,
-        ["Distância (KM)", "Distancia (KM)"],
-        dist_txt,
+        ["Analista Suporte"],
+        ss.analista_suporte,
         dx=8,
         dy=1,
     )
 
-    # Data do atendimento
+    # Analista Integradora (MAMINFO)
+    insert_right_of(
+        page,
+        ["Analista Integradora (MAMINFO)", "Analista Integradora"],
+        ss.analista_integradora,
+        dx=8,
+        dy=1,
+    )
+
+    # Analista validador (NOC / Projetos)
+    insert_right_of(
+        page,
+        ["Analista validador (NOC / Projetos)", "Analista validador"],
+        ss.analista_validador,
+        dx=8,
+        dy=1,
+    )
+
+    # Tipo de Atendimento (texto, mesmo o template tendo checkboxes)
+    insert_right_of(
+        page,
+        ["Tipo de Atendimento"],
+        ss.tipo_atendimento,
+        dx=8,
+        dy=1,
+    )
+
+    # ---------- 3) Horários e Deslocamento ----------
+
+    # Data
     data_str = ""
     try:
         if isinstance(ss.data_atendimento, date):
@@ -198,62 +262,64 @@ def _fill_page1(page: fitz.Page, ss) -> None:
 
     insert_right_of(
         page,
-        ["Data do atendimento", "Data do Atendimento", "Data"],
+        ["Data", "Data do atendimento", "Data do Atendimento"],
         data_str,
         dx=8,
-        dy=1,
+        dy=6,  # desce ~0,5 cm
     )
 
+    # Início
+    insert_right_of(
+        page,
+        ["Início", "Inicio"],
+        ss.inicio_atend,
+        dx=8,
+        dy=6,
+    )
 
-def _fill_page2(page: fitz.Page, ss) -> None:
-    """
-    Preenche a PÁGINA 2 da RAT unificada:
-    2) Atendimento & Testes
-    3) Materiais & Equipamentos
-    4) Observações
-    5) Aceite & Assinaturas
-    """
+    # Término
+    insert_right_of(
+        page,
+        ["Término", "Termino"],
+        ss.termino_atend,
+        dx=8,
+        dy=6,
+    )
 
-    # --------- Atendimento & Testes ---------
+    # Distância (KM) – com tratamento numérico seguro
+    try:
+        dist_raw = str(getattr(ss, "distancia_km", "")).strip()
+        dist_val = float(dist_raw.replace(",", "."))
+        dist_txt = f"{dist_val:.1f}".replace(".", ",")
+    except Exception:
+        dist_txt = str(getattr(ss, "distancia_km", ""))
+
     insert_right_of(
         page,
-        ["Analista Suporte"],
-        ss.analista_suporte,
+        ["Distância (KM)", "Distancia (KM)"],
+        dist_txt,
         dx=8,
-        dy=1,
+        dy=6,
     )
-    insert_right_of(
-        page,
-        ["Analista Integradora (MAMINFO)", "Analista Integradora"],
-        ss.analista_integradora,
-        dx=8,
-        dy=1,
-    )
-    insert_right_of(
-        page,
-        ["Analista validador (NOC / Projetos)", "Analista Validador"],
-        ss.analista_validador,
-        dx=8,
-        dy=1,
-    )
-    insert_right_of(
-        page,
-        ["Tipo de Atendimento", "Tipo de atendimento"],
-        ss.tipo_atendimento,
-        dx=8,
-        dy=1,
-    )
+
+    # ---------- 4) Anormalidade / Motivo do Chamado ----------
 
     insert_textbox(
         page,
-        ["Anormalidade / Motivo do Chamado", "Motivo do Chamado"],
+        [
+            "4. Anormalidade / Motivo do Chamado",
+            "Anormalidade / Motivo do Chamado",
+            "Anormalidade/Motivo do Chamado",
+        ],
         ss.motivo_chamado,
         width=520,
         y_offset=20,
-        height=80,
+        height=90,
         fontsize=9,
         align=0,
     )
+
+    # ---------- 5) Checklist Técnico (SIM / NÃO) ----------
 
     checklist_txt = ""
     if isinstance(ss.checklist_tecnico, list) and ss.checklist_tecnico:
@@ -261,143 +327,84 @@ def _fill_page2(page: fitz.Page, ss) -> None:
 
     insert_textbox(
         page,
-        ["Checklist Técnico", "Checklist Tecnico"],
+        [
+            "5. Checklist Técnico (SIM / NÃO)",
+            "Checklist Técnico (SIM / NÃO)",
+            "Checklist Técnico",
+            "Checklist Tecnico",
+        ],
         checklist_txt,
         width=520,
         y_offset=20,
-        height=60,
+        height=90,
         fontsize=9,
         align=0,
     )
 
-    # --------- Materiais & Equipamentos ---------
-    insert_textbox(
+    # ---------- 6) Aceite ----------
+
+    # No template atual, há apenas os campos do CLIENTE.
+    # Vamos mapear os dados do cliente diretamente, e usar os dados do técnico
+    # como observação extra logo abaixo dos campos.
+
+    insert_right_of(
         page,
-        ["Material utilizado", "Materiais utilizados"],
-        ss.material_utilizado,
-        width=520,
-        y_offset=20,
-        height=80,
-        fontsize=9,
-        align=0,
+        ["Nome do cliente", "Nome do Cliente"],
+        ss.nome_cliente,
+        dx=8,
+        dy=1,
     )
 
-    insert_textbox(
+    insert_right_of(
         page,
-        ["Equipamentos (Instalados)", "Equipamentos Instalados"],
-        ss.equip_instalados,
-        width=520,
-        y_offset=20,
-        height=80,
-        fontsize=9,
-        align=0,
+        ["Documento", "Documento "],
+        ss.doc_cliente,
+        dx=8,
+        dy=1,
     )
 
-    insert_textbox(
+    insert_right_of(
         page,
-        ["Equipamentos Retirados (se houver)", "Equipamentos Retirados"],
-        ss.equip_retirados,
-        width=520,
-        y_offset=20,
-        height=60,
-        fontsize=9,
-        align=0,
+        ["Telefone", "Telefone "],
+        ss.tel_cliente,
+        dx=8,
+        dy=1,
     )
 
-    # --------- Observações ---------
-    testes_txt = ""
-    if isinstance(ss.testes_realizados, list) and ss.testes_realizados:
-        testes_txt = " | ".join(ss.testes_realizados)
-
-    insert_textbox(
-        page,
-        ["Testes realizados", "Testes executados"],
-        testes_txt,
-        width=520,
-        y_offset=20,
-        height=60,
-        fontsize=9,
-        align=0,
-    )
-
-    insert_textbox(
-        page,
-        ["Descrição do Atendimento", "Descricao do Atendimento"],
-        ss.descricao_atendimento,
-        width=520,
-        y_offset=20,
-        height=100,
-        fontsize=9,
-        align=0,
-    )
-
-    insert_textbox(
-        page,
-        ["Observações / Pendências", "Observacoes / Pendencias"],
-        ss.observacoes_pendencias,
-        width=520,
-        y_offset=20,
-        height=80,
-        fontsize=9,
-        align=0,
-    )
-
-    # --------- Aceite & Assinaturas ---------
-    # Aqui eu coloco as infos em blocos de texto próximos dos rótulos
-    tec_info = ""
+    # Observação com dados do técnico (fica no bloco de aceite, perto do texto de declaração)
+    tecnico_info = ""
     if ss.nome_tecnico or ss.doc_tecnico or ss.tel_tecnico or ss.dt_tecnico:
-        tec_info = (
+        tecnico_info = (
+            "Dados do Técnico MAMINFO:\n"
             f"Nome: {ss.nome_tecnico or ''}\n"
             f"Documento: {ss.doc_tecnico or ''}\n"
             f"Telefone: {ss.tel_tecnico or ''}\n"
             f"Data/hora: {ss.dt_tecnico or ''}"
         )
 
-    cli_info = ""
-    if ss.nome_cliente or ss.doc_cliente or ss.tel_cliente or ss.dt_cliente:
-        cli_info = (
-            f"Nome: {ss.nome_cliente or ''}\n"
-            f"Documento: {ss.doc_cliente or ''}\n"
-            f"Telefone: {ss.tel_cliente or ''}\n"
-            f"Data/hora: {ss.dt_cliente or ''}"
+    if tecnico_info:
+        insert_textbox(
+            page,
+            [
+                "Declaro que recebi as orientações técnicas necessárias",
+                "Declaro que recebi as orientacoes tecnicas necessarias",
+            ],
+            tecnico_info,
+            width=260,
+            y_offset=-60,  # sobe um pouco, ficando acima/ao lado do texto
+            height=80,
+            fontsize=7,
+            align=0,
         )
-
-    insert_textbox(
-        page,
-        ["Técnico MAMINFO", "Tecnico MAMINFO"],
-        tec_info,
-        width=250,
-        y_offset=10,
-        height=80,
-        fontsize=8,
-        align=0,
-    )
-
-    insert_textbox(
-        page,
-        ["Cliente", "Cliente "],
-        cli_info,
-        width=250,
-        y_offset=10,
-        height=80,
-        fontsize=8,
-        align=0,
-    )
-
-    # Obs.: se no futuro quisermos colocar as assinaturas digitais (PNG),
-    # podemos usar common.pdf.insert_signature_png ancorando em algum texto.
 
 
 def generate_pdf_from_state(ss) -> bytes:
     """
     Abre o template RAT_MAM_UNIFICADA_VF.pdf, preenche e retorna bytes do PDF.
+    (somente página 1)
     """
     doc, page1 = open_pdf_template(PDF_BASE_PATH, hint="RAT_MAM_UNIFICADA")
-    # page2: se o template tiver 2+ páginas, usa a segunda; senão cria nova
-    page2 = doc[1] if doc.page_count >= 2 else doc.new_page()
-
-    _fill_page1(page1, ss)
-    _fill_page2(page2, ss)
+    _fill_page(page1, ss)
 
     out = BytesIO()
     doc.save(out)
@@ -414,18 +421,18 @@ def render():
     """
     _init_rat_defaults()
 
-    # Desenha layout (abas, modo escuro, etc.)
+    # Desenha layout (abas, modo escuro, etc.) – toda a UI fica em ui_unificado
     ui_unificado.render_layout()
 
     ss = st.session_state
 
-    # Se o botão "Gerar RAT" foi clicado na UI:
+    # Se o botão "Gerar RAT" foi clicado na UI (ui_unificado seta trigger_generate=True)
     if ss.get("trigger_generate"):
         try:
             pdf_bytes = generate_pdf_from_state(ss)
             st.success("RAT gerada com sucesso! ✅")
 
-            # Monta nome de arquivo
+            # Nome de arquivo amigável
             nome_base = (
                 ss.num_relatorio
                 or ss.num_chamado
