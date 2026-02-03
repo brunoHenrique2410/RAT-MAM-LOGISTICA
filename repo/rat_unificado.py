@@ -284,7 +284,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         ss.endereco_completo,
         width=520,
         y_offset=39,
-        height=70,
+        height=60,
         fontsize=9,
         align=0,
     )
@@ -296,8 +296,8 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         page,
         ["Analista Suporte"],
         ss.analista_suporte,
-        dx=-20,
-        dy=25,
+        dx=-8,
+        dy=15,
     )
 
     # Analista Integradora – descer 25 / 40 pra esquerda
@@ -305,8 +305,8 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         page,
         ["Analista Integradora (MAMINFO)", "Analista Integradora"],
         ss.analista_integradora,
-        dx=-20,
-        dy=25,
+        dx=-8,
+        dy=15,
     )
 
     # Analista validador – descer 25 / 40 pra esquerda
@@ -314,8 +314,8 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         page,
         ["Analista validador (NOC / Projetos)", "Analista validador"],
         ss.analista_validador,
-        dx=-20,
-        dy=25,
+        dx=-8,
+        dy=15,
     )
 
     # Tipo de Atendimento – marca X na opção escolhida
