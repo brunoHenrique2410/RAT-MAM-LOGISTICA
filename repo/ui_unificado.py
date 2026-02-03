@@ -281,7 +281,7 @@ def render_step4(ss):
 
 
 def render_step5(ss):
-    """
+    
 elif step == 5:
     st.markdown("### 5) Aceite & Assinaturas ↩")
 
