@@ -200,43 +200,76 @@ def _mark_checklist_tecnico(page: fitz.Page, checklist_dict) -> None:
         "Teste de circuito normal": "Não",
         ...
     }
+
+    Estratégia:
+    - Procura o retângulo do texto do item.
+    - Procura todos os "Sim" e "Não" na página.
+    - Para cada item, pega o "Sim"/"Não" que estiver na mesma linha (y parecido)
+      e mais à direita do texto do item.
+    - Desenha o X um pouco à esquerda da palavra "Sim"/"Não" (onde fica a caixinha).
     """
     if not isinstance(checklist_dict, dict) or not checklist_dict:
         return
 
+    # pré-busca de todos os "Sim" e "Não" da página
+    try:
+        sim_rects = page.search_for("Sim")
+    except Exception:
+        sim_rects = []
+
+    try:
+        nao_rects = page.search_for("Não")
+    except Exception:
+        nao_rects = []
+
     page_w = page.rect.width
+
+    def _closest_on_line(label_rect, rects):
+        """
+        Pega o retângulo em `rects` que:
+        - está na mesma "linha" (y +- pequena faixa)
+        - tem x0 > label_rect.x1 (à direita do texto)
+        - é o mais próximo em x (menor x0)
+        """
+        if not rects:
+            return None
+        ly = (label_rect.y0 + label_rect.y1) / 2.0
+        candidates = []
+        for r in rects:
+            ry = (r.y0 + r.y1) / 2.0
+            if abs(ry - ly) <= 6 and r.x0 > label_rect.x1:
+                candidates.append(r)
+        if not candidates:
+            return None
+        # pega o mais próximo do texto (menor x0)
+        candidates.sort(key=lambda rr: rr.x0)
+        return candidates[0]
 
     for item, resp in checklist_dict.items():
         if str(resp) not in ("Sim", "Não"):
             continue
 
         try:
-            rects = page.search_for(item)
+            item_rects = page.search_for(item)
         except Exception:
-            rects = []
+            item_rects = []
 
-        if not rects:
+        if not item_rects:
             continue
 
-        r = rects[0]
-        y = (r.y0 + r.y1) / 2.0
-
-        # descobre se o item está na coluna da esquerda ou da direita
-        is_left_col = r.x0 < page_w / 2
-
-        # offsets calibrados pra ficar próximo dos quadradinhos Sim/Não
-        if is_left_col:
-            dx_sim = 95
-            dx_nao = 135
-        else:
-            dx_sim = 90
-            dx_nao = 130
+        label_rect = item_rects[0]
 
         if resp == "Sim":
-            x = r.x1 + dx_sim
+            r = _closest_on_line(label_rect, sim_rects)
         else:
-            x = r.x1 + dx_nao
+            r = _closest_on_line(label_rect, nao_rects)
 
+        if not r:
+            continue
+
+        # posição do X: um pouco à esquerda da palavra "Sim"/"Não"
+        y = (r.y0 + r.y1) / 2.0
+        x = r.x0 - 10  # 10 pontos à esquerda deve cair na caixinha
         page.insert_text((x, y), "X", fontsize=11)
 
 
