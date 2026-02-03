@@ -282,7 +282,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         page,
         ["Endereço Completo", "Endereço completo", "Endereco Completo"],
         ss.endereco_completo,
-        width=520,
+        width=500,
         y_offset=39,
         height=90,
         fontsize=9,
@@ -305,7 +305,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         page,
         ["Analista Integradora (MAMINFO)", "Analista Integradora"],
         ss.analista_integradora,
-        dx=-1,
+        dx=-10,
         dy=15,
     )
 
@@ -314,7 +314,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         page,
         ["Analista validador (NOC / Projetos)", "Analista validador"],
         ss.analista_validador,
-        dx=1,
+        dx=-25,
         dy=15,
     )
 
@@ -330,7 +330,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         page,
         ["Data", "Data do atendimento", "Data do Atendimento"],
         data_str,
-        dx=1,
+        dx=-2,
         dy=15,
     )
 
@@ -339,7 +339,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         page,
         ["Início", "Inicio"],
         ss.inicio_atend,
-        dx=0,
+        dx=1,
         dy=15,
     )
 
@@ -348,7 +348,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         page,
         ["Término", "Termino"],
         ss.termino_atend,
-        dx=-10,
+        dx=-9,
         dy=15,
     )
 
