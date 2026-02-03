@@ -221,7 +221,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         ["Nº Chamado", "N° Chamado", "No Chamado", "Numero Chamado"],
         ss.num_chamado,
         dx=8,
-        dy=20,
+        dy=15,
     )
 
     # Nº Relatório – descer 20 "px"
@@ -230,7 +230,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         ["Nº Relatório", "N° Relatório", "No Relatório", "Numero Relatório"],
         ss.num_relatorio,
         dx=8,
-        dy=20,
+        dy=15,
     )
 
     # Operadora / Contrato -> descer 15 e ~100px para a esquerda
