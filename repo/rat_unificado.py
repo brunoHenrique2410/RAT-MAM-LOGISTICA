@@ -170,9 +170,6 @@ def _mark_anormalidades(page: fitz.Page, flags) -> None:
     # normaliza para lower
     norm = [str(f).strip().lower() for f in flags]
 
-    def mx(label: str):
-        mark_X_left_of(page, label, dx=-10, dy=0, fontsize=11)
-
     for f in norm:
         if "interrup" in f or "total" in f:
             mx("Interrupção total")
