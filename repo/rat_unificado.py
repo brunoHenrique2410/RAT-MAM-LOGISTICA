@@ -269,7 +269,7 @@ def _mark_checklist_tecnico(page: fitz.Page, checklist_dict) -> None:
 
         # posição do X: um pouco à esquerda da palavra "Sim"/"Não"
         y = (r.y0 + r.y1) / 2.0
-        x = r.x0 - 14  # 10 pontos à esquerda deve cair na caixinha
+        x = r.x0 - 12  # 10 pontos à esquerda deve cair na caixinha
         page.insert_text((x, y), "X", fontsize=11)
 
 
