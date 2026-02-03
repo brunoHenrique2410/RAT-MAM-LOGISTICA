@@ -247,7 +247,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         ["Cliente / Razão Social", "Cliente/Razão Social", "Cliente / Razao Social"],
         ss.cliente_razao,
         dx=8,
-        dy=1,
+        dy=15,
     )
 
     if getattr(ss, "cnpj_cpf", ""):
@@ -284,7 +284,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         ss.endereco_completo,
         width=520,
         y_offset=39,
-        height=60,
+        height=90,
         fontsize=9,
         align=0,
     )
@@ -305,7 +305,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         page,
         ["Analista Integradora (MAMINFO)", "Analista Integradora"],
         ss.analista_integradora,
-        dx=-8,
+        dx=-1,
         dy=15,
     )
 
@@ -314,7 +314,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         page,
         ["Analista validador (NOC / Projetos)", "Analista validador"],
         ss.analista_validador,
-        dx=-8,
+        dx=1,
         dy=15,
     )
 
@@ -330,7 +330,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         page,
         ["Data", "Data do atendimento", "Data do Atendimento"],
         data_str,
-        dx=8,
+        dx=1,
         dy=15,
     )
 
@@ -339,7 +339,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         page,
         ["Início", "Inicio"],
         ss.inicio_atend,
-        dx=8,
+        dx=0,
         dy=15,
     )
 
@@ -348,7 +348,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         page,
         ["Término", "Termino"],
         ss.termino_atend,
-        dx=8,
+        dx=-10,
         dy=15,
     )
 
