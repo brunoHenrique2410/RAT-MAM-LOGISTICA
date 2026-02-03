@@ -296,7 +296,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         page,
         ["Analista Suporte"],
         ss.analista_suporte,
-        dx=-8,
+        dx=-25,
         dy=15,
     )
 
@@ -305,7 +305,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         page,
         ["Analista Integradora (MAMINFO)", "Analista Integradora"],
         ss.analista_integradora,
-        dx=-100,
+        dx=-110,
         dy=15,
     )
 
@@ -314,7 +314,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         page,
         ["Analista validador (NOC / Projetos)", "Analista validador"],
         ss.analista_validador,
-        dx=-100,
+        dx=-130,
         dy=15,
     )
 
