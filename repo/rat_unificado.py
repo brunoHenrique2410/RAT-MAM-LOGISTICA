@@ -28,7 +28,7 @@ from common.pdf import (
     insert_right_of,
     insert_textbox,
     mark_X_left_of,
-    insert_signature_png,   # <-- para assinaturas
+    insert_signature_png,   # assinaturas
 )
 import ui_unificado  # layout / abas / modo escuro
 
@@ -47,8 +47,7 @@ PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_MAM_UNIFICADA_VF.pdf")
 
 def _init_rat_defaults() -> None:
     """
-    Inicializa todos os campos usados pela UI + geração de PDF,
-    para evitar KeyError em st.session_state.
+    Inicializa todos os campos usados pela UI + geração de PDF.
     """
     init_defaults(
         {
@@ -72,7 +71,7 @@ def _init_rat_defaults() -> None:
             "tipo_atendimento": "",          # ex.: "Instalação", "Ativação"...
             "anormalidade_flags": [],        # ex.: ["Interrupção total", "Lentidão"]
             "motivo_chamado": "",            # fallback texto livre
-            # checklist técnico – agora dicionário {item: "Sim"/"Não"}
+            # checklist técnico – dicionário {item: "Sim"/"Não"}
             "checklist_tecnico": {},
             # --------- BLOCO 3 – Materiais & Equipamentos ---------
             "material_utilizado": "",
@@ -130,7 +129,6 @@ def _safe_distancia_txt(ss) -> str:
 def _mark_tipo_atendimento(page: fitz.Page, tipo: str) -> None:
     """
     Marca X no checkbox do Tipo de Atendimento, de acordo com o valor vindo da UI.
-    Se não bater nenhuma opção, não faz nada.
     """
     if not tipo:
         return
@@ -138,7 +136,6 @@ def _mark_tipo_atendimento(page: fitz.Page, tipo: str) -> None:
     t = tipo.strip().lower()
 
     def mx(label: str):
-        # pequeno deslocamento pra encaixar na caixinha
         mark_X_left_of(page, label, dx=-10, dy=0, fontsize=11)
 
     if "instala" in t:
@@ -162,13 +159,15 @@ def _mark_tipo_atendimento(page: fitz.Page, tipo: str) -> None:
 def _mark_anormalidades(page: fitz.Page, flags) -> None:
     """
     Marca X nas opções de "Anormalidade / Motivo do Chamado"
-    se receber uma lista de strings (flags). Caso contrário, não faz nada.
+    se receber uma lista de strings (flags).
     """
     if not flags or not isinstance(flags, (list, tuple, set)):
         return
 
-    # normaliza para lower
     norm = [str(f).strip().lower() for f in flags]
+
+    def mx(label: str):
+        mark_X_left_of(page, label, dx=-10, dy=0, fontsize=11)
 
     for f in norm:
         if "interrup" in f or "total" in f:
@@ -198,22 +197,17 @@ def _mark_checklist_tecnico(page: fitz.Page, checklist_dict) -> None:
 
     checklist_dict = {
         "Circuito corretamente instalado": "Sim",
-        "Teste de circuito comutado": "Não",
+        "Teste de circuito normal": "Não",
         ...
     }
-
-    OBS: offsets (dx_sim / dx_nao) podem ser ajustados depois conforme o template.
     """
     if not isinstance(checklist_dict, dict) or not checklist_dict:
         return
 
-    # deslocamentos a partir do fim do texto do item
-    # (ajuste fino depois olhando o PDF)
-    dx_sim = 150   # coluna "Sim"
-    dx_nao = 220   # coluna "Não"
+    page_w = page.rect.width
 
     for item, resp in checklist_dict.items():
-        if resp not in ("Sim", "Não"):
+        if str(resp) not in ("Sim", "Não"):
             continue
 
         try:
@@ -224,8 +218,19 @@ def _mark_checklist_tecnico(page: fitz.Page, checklist_dict) -> None:
         if not rects:
             continue
 
-        r = rects[0]  # primeira ocorrência
+        r = rects[0]
         y = (r.y0 + r.y1) / 2.0
+
+        # descobre se o item está na coluna da esquerda ou da direita
+        is_left_col = r.x0 < page_w / 2
+
+        # offsets calibrados pra ficar próximo dos quadradinhos Sim/Não
+        if is_left_col:
+            dx_sim = 95
+            dx_nao = 135
+        else:
+            dx_sim = 90
+            dx_nao = 130
 
         if resp == "Sim":
             x = r.x1 + dx_sim
@@ -240,17 +245,11 @@ def _mark_checklist_tecnico(page: fitz.Page, checklist_dict) -> None:
 
 def _fill_page1(page: fitz.Page, ss) -> None:
     """
-    Preenche página 1 da RAT unificada:
-    1. Identificação
-    2. Dados Operacionais
-    3. Horários e Deslocamento
-    4. Anormalidade / Motivo do Chamado
-    5. Checklist Técnico
+    Preenche página 1 da RAT unificada.
     """
 
     # ---------- 1) Identificação do Atendimento ----------
 
-    # Nº Chamado – descer 20 "px"
     insert_right_of(
         page,
         ["Nº Chamado", "N° Chamado", "No Chamado", "Numero Chamado"],
@@ -259,7 +258,6 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         dy=15,
     )
 
-    # Nº Relatório – descer 20 "px"
     insert_right_of(
         page,
         ["Nº Relatório", "N° Relatório", "No Relatório", "Numero Relatório"],
@@ -268,13 +266,12 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         dy=15,
     )
 
-    # Operadora / Contrato -> descer 15 e ~100px para a esquerda
     insert_right_of(
         page,
         ["Operadora / Contrato", "Operadora/Contrato", "Operadora Contrato"],
         ss.operadora_contrato,
-        dx=-25,   # move pra esquerda
-        dy=15,    # desce
+        dx=-25,
+        dy=15,
     )
 
     insert_right_of(
@@ -294,7 +291,6 @@ def _fill_page1(page: fitz.Page, ss) -> None:
             dy=1,
         )
 
-    # Contato nome – descer um pouco
     insert_right_of(
         page,
         ["Contato (nome)", "Contato", "Contato (Nome)"],
@@ -303,7 +299,6 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         dy=15,
     )
 
-    # Telefone / E-mail – descer um pouco
     insert_right_of(
         page,
         ["Telefone / E-mail", "Telefone/E-mail", "Telefone / Email"],
@@ -312,7 +307,6 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         dy=15,
     )
 
-    # Endereço Completo – caixa de texto (você já ajustou no template)
     insert_textbox(
         page,
         ["Endereço Completo", "Endereço completo", "Endereco Completo"],
@@ -350,7 +344,6 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         dy=15,
     )
 
-    # Tipo de Atendimento – marca X na opção escolhida
     _mark_tipo_atendimento(page, getattr(ss, "tipo_atendimento", ""))
 
     # ---------- 3) Horários e Deslocamento ----------
@@ -414,11 +407,9 @@ def _fill_page1(page: fitz.Page, ss) -> None:
 
     cl = getattr(ss, "checklist_tecnico", None)
 
-    # Se for dicionário (caso atual da UI), marcamos X em SIM / NÃO
     if isinstance(cl, dict) and cl:
         _mark_checklist_tecnico(page, cl)
     else:
-        # fallback: texto único
         checklist_txt = ""
         if isinstance(cl, (list, tuple)):
             checklist_txt = " | ".join(str(x) for x in cl)
@@ -537,7 +528,7 @@ def _fill_page2(page: fitz.Page, ss) -> None:
     # Técnico MAMINFO – textos
     insert_right_of(
         page,
-        ["Nome Técnico", "Nome Tecnico"],
+        ["Nome Técnico", "Nome Tecnico", "Nome do técnico", "Nome do Técnico"],
         ss.nome_tecnico,
         dx=8,
         dy=1,
@@ -567,21 +558,21 @@ def _fill_page2(page: fitz.Page, ss) -> None:
     # Cliente – textos
     insert_right_of(
         page,
-        ["Nome cliente", "Nome Cliente"],
+        ["Nome cliente", "Nome Cliente", "Nome do cliente"],
         ss.nome_cliente,
         dx=8,
         dy=1,
     )
     insert_right_of(
         page,
-        ["Documento cliente", "Documento Cliente"],
+        ["Documento cliente", "Documento Cliente", "Documento"],
         ss.doc_cliente,
         dx=8,
         dy=1,
     )
     insert_right_of(
         page,
-        ["Telefone cliente", "Telefone Cliente"],
+        ["Telefone cliente", "Telefone Cliente", "Telefone"],
         ss.tel_cliente,
         dx=8,
         dy=1,
@@ -595,13 +586,12 @@ def _fill_page2(page: fitz.Page, ss) -> None:
     )
 
     # Assinaturas (PNG) – Técnico e Cliente
-    # OBS: offsets são aproximados; se ficarem fora do lugar, a gente ajusta.
     if ss.sig_tec_png:
         insert_signature_png(
             page,
             ["Técnico MAMINFO", "Tecnico MAMINFO", "Técnico MAMINFO (assinatura)"],
             ss.sig_tec_png,
-            rel_rect=(0, -40, 200, -5),  # largura/altura aproximadas acima do texto
+            rel_rect=(0, -40, 200, -5),
             occurrence=1,
         )
 
