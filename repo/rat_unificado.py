@@ -151,8 +151,23 @@ def _fill_page1(page1: fitz.Page, ss):
     )
     insert_right_of(page1, ["Telefone / E-mail", "Telefone/E-mail"], ss.telefone_email, dx=8, dy=1)
 
-    if ss.distancia_km:
-        insert_right_of(page1, ["Distância (KM)", "Distancia (KM)"], f"{ss.distancia_km:.1f}", dx=8, dy=1)
+   # --- DISTÂNCIA (KM) ---  (rat_unificado.py, dentro do _fill_page1)
+      try:
+          # converte string tipo "12,5" ou "12.5" para float
+          dist_raw = str(getattr(ss, "distancia_km", "")).strip()
+          dist_val = float(dist_raw.replace(",", "."))
+          dist_txt = f"{dist_val:.1f}".replace(".", ",")  # formata 1 casa, com vírgula
+      except Exception:
+          # se não conseguir converter, usa o texto cru
+          dist_txt = str(getattr(ss, "distancia_km", ""))
+
+      insert_right_of(
+          page1,
+          ["Distância (KM)", "Distancia (KM)"],
+          dist_txt,
+          dx=8,
+          dy=1,
+      )
 
     # --- Bloco 2: Atendimento & Testes ---
     insert_right_of(page1, ["Analista Suporte"], ss.analista_suporte, dx=8, dy=1)
