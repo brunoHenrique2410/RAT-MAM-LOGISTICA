@@ -265,7 +265,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         ["Contato (nome)", "Contato", "Contato (Nome)"],
         ss.contato_nome,
         dx=8,
-        dy=6,
+        dy=15,
     )
 
     # Telefone / E-mail – descer um pouco
@@ -274,7 +274,7 @@ def _fill_page1(page: fitz.Page, ss) -> None:
         ["Telefone / E-mail", "Telefone/E-mail", "Telefone / Email"],
         ss.contato_telefone_email,
         dx=8,
-        dy=6,
+        dy=15,
     )
 
     # Endereço Completo – descer ~39 "px"
