@@ -1,4 +1,3 @@
-@@ -0,0 +1,27 @@
 # common/state.py — helpers de estado e query params
 import streamlit as st
 from urllib.parse import urlencode
