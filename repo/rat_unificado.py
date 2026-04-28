@@ -23,15 +23,15 @@ from datetime import datetime, date
 import streamlit as st
 import fitz  # PyMuPDF
 
-from common.state import init_defaults
-from common.pdf import (
+from repo.common.state import init_defaults
+from repo.common.pdf import(
     open_pdf_template,
     insert_right_of,
     insert_textbox,
     mark_X_left_of,
     insert_signature_png,   # assinaturas
 )
-import ui_unificado  # layout / abas / modo escuro
+from repo.common.ui import   # layout / abas / modo escuro
 
 
 # =============== PATHS / CONSTANTES ===============
