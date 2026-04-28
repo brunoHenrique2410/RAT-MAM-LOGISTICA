@@ -16,6 +16,7 @@
 #   5) Aceite & Assinaturas
 
 import os
+import sys
 from io import BytesIO
 from datetime import datetime, date
 
