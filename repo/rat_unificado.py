@@ -4,8 +4,11 @@ from io import BytesIO
 from datetime import datetime, date
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-if THIS_DIR not in sys.path:
-    sys.path.insert(0, THIS_DIR)
+PROJECT_ROOT = os.path.dirname(THIS_DIR)
+
+for path in [THIS_DIR, PROJECT_ROOT]:
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
 import streamlit as st
 import fitz  # PyMuPDF
