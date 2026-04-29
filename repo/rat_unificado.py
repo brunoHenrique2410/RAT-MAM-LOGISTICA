@@ -31,7 +31,7 @@ from repo.common.pdf import(
     mark_X_left_of,
     insert_signature_png,   # assinaturas
 )
-from repo.common.ui import   # layout / abas / modo escuro
+
 
 
 # =============== PATHS / CONSTANTES ===============
