@@ -20,27 +20,28 @@ import sys
 from io import BytesIO
 from datetime import datetime, date
 
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+if THIS_DIR not in sys.path:
+    sys.path.insert(0, THIS_DIR)
+
 import streamlit as st
 import fitz  # PyMuPDF
 
-from repo.common.state import init_defaults
-from repo.common.pdf import(
+from common.state import init_defaults
+from common.pdf import (
     open_pdf_template,
     insert_right_of,
     insert_textbox,
     mark_X_left_of,
-    insert_signature_png,   # assinaturas
+    insert_signature_png,
 )
 
+import common.ui as ui_unificado
 
 
 # =============== PATHS / CONSTANTES ===============
 
-THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(THIS_DIR)
-
-PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_templates")
-PDF_BASE_PATH = os.path.join(PDF_DIR, "RAT_MAM_UNIFICADA_VF.pdf")
 
 
 # =============== STATE DEFAULTS ===============
