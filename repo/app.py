@@ -1,6 +1,6 @@
 # repo/app.py
 import streamlit as st
-import rat_unificado
+import rat_unificado.py
 
 def main():
     st.set_page_config(
