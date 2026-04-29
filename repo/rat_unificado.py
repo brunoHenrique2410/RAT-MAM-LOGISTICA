@@ -1,20 +1,3 @@
-# repo/rat_unificado.py
-#
-# RAT MAM UNIFICADA – 2 PÁGINAS
-# Template: pdf_templates/RAT_MAM_UNIFICADA_VF.pdf
-#
-# Pág. 1:
-#   1) Identificação do Atendimento
-#   2) Dados Operacionais
-#   3) Horários e Deslocamento
-#   4) Anormalidade / Motivo do Chamado
-#   5) Checklist Técnico (SIM / NÃO)
-#
-# Pág. 2:
-#   3) Materiais & Equipamentos
-#   4) Observações
-#   5) Aceite & Assinaturas
-
 import os
 import sys
 from io import BytesIO
