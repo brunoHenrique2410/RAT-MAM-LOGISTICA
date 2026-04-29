@@ -1,7 +1,6 @@
 # repo/app.py
 import streamlit as st
-import repo.rat_unificado.py
-
+import rat_unificado
 def main():
     st.set_page_config(
         page_title="RAT MAM Unificada",
