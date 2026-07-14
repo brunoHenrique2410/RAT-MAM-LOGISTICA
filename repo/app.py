@@ -2,7 +2,7 @@ import os
 import sys
 import streamlit as st
 
-st.write("CWD:", os.getcwd())
+
 st.write("__file__:", __file__)
 st.write("sys.path:", sys.path[:5])
 st.write("Arquivos na pasta atual:", os.listdir("."))
