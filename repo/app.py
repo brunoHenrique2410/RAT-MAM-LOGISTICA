@@ -10,26 +10,36 @@ st.set_page_config(
 )
 
 
-repo_dir = os.path.dirname(os.path.abspath(__file__))
-common_dir = os.path.join(repo_dir, "common")
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(APP_DIR)
 
-# Informações temporárias para diagnóstico
-st.write("__file__:", __file__)
-st.write("sys.path:", sys.path[:5])
-st.write("Arquivos na pasta atual:", os.listdir("."))
-st.write("Arquivos na pasta do repositório:", os.listdir(repo_dir))
-
-st.write("Existe common?", os.path.exists(common_dir))
-
-if os.path.exists(common_dir):
-    st.write("Arquivos em common:", os.listdir(common_dir))
+# Adiciona os caminhos do projeto ao Python
+for path in [APP_DIR, PROJECT_DIR]:
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
 
-import rat_unificado
+try:
+    import rat_unificado
+except Exception as erro:
+    st.error("Erro ao importar rat_unificado")
+    st.exception(erro)
+    st.stop()
 
 
 def main():
-    rat_unificado.render()
+    # Diagnóstico temporário
+    st.info(f"app.py carregado de: {__file__}")
+    st.info(
+        f"rat_unificado carregado de: "
+        f"{getattr(rat_unificado, '__file__', 'arquivo não identificado')}"
+    )
+
+    try:
+        rat_unificado.render()
+    except Exception as erro:
+        st.error("O formulário apresentou um erro durante a renderização.")
+        st.exception(erro)
 
 
 if __name__ == "__main__":
