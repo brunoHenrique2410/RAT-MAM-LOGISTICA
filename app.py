@@ -18,7 +18,7 @@ if os.path.exists(common_dir):
 import rat_unificado
 def main():
     st.set_page_config(
-        page_title="RAT MAM Unificada",
+        page_title="rat_Unificado",
         layout="wide",
         page_icon="🧾",
     )
