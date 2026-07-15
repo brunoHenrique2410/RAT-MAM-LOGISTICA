@@ -22,7 +22,7 @@ from common.pdf import (
     insert_signature_png,
 )
 
-import common.ui as ui_unificado
+import ui_unificado
 
 
 # =============== PATHS / CONSTANTES ===============
