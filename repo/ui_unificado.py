@@ -9,6 +9,7 @@ import os
 from datetime import date
 
 import streamlit as st
+import common.ui as ui_componentes
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(THIS_DIR)
@@ -392,10 +393,10 @@ def step5_aceite_assinaturas() -> None:
             "Data e hora (Cliente)", value=ss.dt_cliente
         )
 
-    st.caption(
-        "As assinaturas poderão ser coletadas digitalmente ou manualmente na impressão, "
-        "conforme sua necessidade."
-    )
+    st.markdown("---")
+    st.markdown("### Assinaturas digitais")
+
+    ui_componentes.assinatura_dupla_png()
 
 
 # ----------------- RENDER PRINCIPAL -----------------
