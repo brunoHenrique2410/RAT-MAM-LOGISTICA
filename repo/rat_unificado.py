@@ -663,9 +663,17 @@ def _get_photo_bytes(photo) -> bytes:
 
 def _normalize_photo_for_pdf(raw: bytes) -> bytes:
     """
-    Corrige a orientação EXIF e converte a imagem para JPEG RGB,
-    facilitando a inclusão no PDF.
+    Corrige orientação EXIF, redimensiona e comprime a imagem.
+
+    Regras:
+    - lado maior limitado a 1600 px;
+    - conversão para RGB;
+    - JPEG com qualidade 82;
+    - otimização e modo progressivo ativados.
     """
+    max_dimension = 1600
+    jpeg_quality = 82
+
     with Image.open(BytesIO(raw)) as image:
         image = ImageOps.exif_transpose(image)
 
@@ -681,13 +689,30 @@ def _normalize_photo_for_pdf(raw: bytes) -> bytes:
         elif image.mode == "L":
             image = image.convert("RGB")
 
+        width, height = image.size
+        largest_side = max(width, height)
+
+        if largest_side > max_dimension:
+            scale = max_dimension / largest_side
+            new_size = (
+                max(1, int(width * scale)),
+                max(1, int(height * scale)),
+            )
+
+            image = image.resize(
+                new_size,
+                Image.Resampling.LANCZOS,
+            )
+
         output = BytesIO()
         image.save(
             output,
             format="JPEG",
-            quality=88,
+            quality=jpeg_quality,
             optimize=True,
+            progressive=True,
         )
+
         return output.getvalue()
 
 
