@@ -66,28 +66,30 @@ def header_bar() -> None:
 
 
 def _step_selector() -> int:
-    """Radio superior para escolher a etapa (sem mexer em PDF)."""
+    """Mostra apenas o progresso atual, sem permitir seleção manual da etapa."""
     ss = st.session_state
+
     if "current_step" not in ss:
         ss.current_step = 1
 
+    ss.current_step = max(1, min(int(ss.current_step), 5))
+
     steps = {
-        1: "1) Dados do Relatório & Local",
-        2: "2) Atendimento & Testes",
-        3: "3) Checklist Técnico",
-        4: "4) Materiais & Observações",
-        5: "5) Aceite & Assinaturas",
+        1: "Dados do Relatório & Local",
+        2: "Atendimento & Testes",
+        3: "Checklist Técnico",
+        4: "Materiais & Observações",
+        5: "Aceite & Assinaturas",
     }
 
-    step = st.radio(
-        "Etapas",
-        options=list(steps.keys()),
-        index=list(steps.keys()).index(ss.current_step),
-        format_func=lambda x: steps[x],
-        horizontal=True,
-    )
-    ss.current_step = step
+    step = ss.current_step
+    progresso = step / len(steps)
+
+    st.markdown(f"### Etapa {step} de {len(steps)}")
+    st.caption(steps[step])
+    st.progress(progresso)
     st.divider()
+
     return step
 
 
@@ -405,11 +407,12 @@ def step5_aceite_assinaturas() -> None:
 def render_layout() -> None:
     """
     Função chamada por rat_unificado.render().
-    Apenas desenha o layout e seta ss.trigger_generate quando clicar em Gerar RAT.
+    Exibe uma etapa por vez, mostra o progresso e controla a navegação.
     """
     apply_dark_full_layout()
     header_bar()
 
+    ss = st.session_state
     step = _step_selector()
 
     if step == 1:
@@ -424,9 +427,68 @@ def render_layout() -> None:
         step5_aceite_assinaturas()
 
     st.markdown("---")
-    col_info, col_btn = st.columns([3, 1])
-    with col_info:
-        st.caption("Preencha as etapas necessárias e clique em **Gerar RAT**.")
-    with col_btn:
-        if st.button("🧾 Gerar RAT", type="primary"):
-            st.session_state.trigger_generate = True
+
+    if step == 1:
+        col_info, col_next = st.columns([3, 1])
+
+        with col_info:
+            st.caption("Preencha os campos desta etapa para continuar.")
+
+        with col_next:
+            if st.button(
+                "Próxima etapa ➡️",
+                type="primary",
+                use_container_width=True,
+                key="btn_proxima_1",
+            ):
+                ss.current_step = 2
+                st.rerun()
+
+    elif step in (2, 3, 4):
+        col_back, col_info, col_next = st.columns([1, 2, 1])
+
+        with col_back:
+            if st.button(
+                "⬅️ Voltar",
+                use_container_width=True,
+                key=f"btn_voltar_{step}",
+            ):
+                ss.current_step = step - 1
+                st.rerun()
+
+        with col_info:
+            st.caption(f"Etapa {step} de 5.")
+
+        with col_next:
+            if st.button(
+                "Próxima etapa ➡️",
+                type="primary",
+                use_container_width=True,
+                key=f"btn_proxima_{step}",
+            ):
+                ss.current_step = step + 1
+                st.rerun()
+
+    else:
+        col_back, col_info, col_generate = st.columns([1, 2, 1])
+
+        with col_back:
+            if st.button(
+                "⬅️ Voltar",
+                use_container_width=True,
+                key="btn_voltar_5",
+            ):
+                ss.current_step = 4
+                st.rerun()
+
+        with col_info:
+            st.caption("Revise os dados e gere a RAT.")
+
+        with col_generate:
+            if st.button(
+                "🧾 Gerar RAT",
+                type="primary",
+                use_container_width=True,
+                key="btn_gerar_rat",
+            ):
+                ss.trigger_generate = True
