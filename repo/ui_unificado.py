@@ -7,6 +7,7 @@
 
 import os
 import hashlib
+from io import BytesIO
 from datetime import date
 
 import streamlit as st
@@ -481,11 +482,50 @@ def step5_aceite_assinaturas() -> None:
 
         for indice, foto in enumerate(ss.fotos_chamado):
             with colunas[indice % 3]:
-                st.image(
-                    foto["conteudo"],
-                    caption=f'{indice + 1}. {foto["nome"]}',
-                    use_container_width=True,
-                )
+                try:
+                    if isinstance(foto, dict):
+                        conteudo = foto.get("conteudo", b"")
+                        nome = foto.get(
+                            "nome",
+                            f"Foto {indice + 1}",
+                        )
+
+                    elif hasattr(foto, "getvalue"):
+                        conteudo = foto.getvalue()
+                        nome = getattr(
+                            foto,
+                            "name",
+                            f"Foto {indice + 1}",
+                        )
+
+                    elif isinstance(foto, (bytes, bytearray)):
+                        conteudo = bytes(foto)
+                        nome = f"Foto {indice + 1}"
+
+                    else:
+                        st.warning(
+                            f"Não foi possível visualizar "
+                            f"a foto {indice + 1}."
+                        )
+                        continue
+
+                    if not conteudo:
+                        st.warning(
+                            f"A foto {indice + 1} está vazia."
+                        )
+                        continue
+
+                    st.image(
+                        BytesIO(conteudo),
+                        caption=f"{indice + 1}. {nome}",
+                        use_container_width=True,
+                    )
+
+                except Exception as erro:
+                    st.warning(
+                        f"Erro ao visualizar a foto "
+                        f"{indice + 1}: {erro}"
+                    )
 
         if st.button(
             "🗑️ Limpar todas as fotos",
