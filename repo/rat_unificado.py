@@ -724,6 +724,199 @@ def _fit_rect_keep_aspect(
     )
 
 
+def _clean_metadata_value(value) -> str:
+    """
+    Converte qualquer valor em uma linha segura para extração futura.
+    """
+    if isinstance(value, (list, tuple, set)):
+        value = " | ".join(str(item) for item in value)
+
+    elif isinstance(value, dict):
+        value = " | ".join(
+            f"{key}:{item}"
+            for key, item in value.items()
+        )
+
+    cleaned = str(value or "")
+    cleaned = cleaned.replace("\r", " ")
+    cleaned = cleaned.replace("\n", " ")
+    cleaned = " ".join(cleaned.split())
+
+    return cleaned
+
+
+def _build_hidden_metadata(ss) -> str:
+    """
+    Monta o bloco estruturado que ficará em texto branco na página 3.
+
+    Cada linha começa com &&&, facilitando a extração pelo sistema
+    de fechamento.
+    """
+    metadata = {
+        "VERSAO": "1",
+        "TIPO_DOCUMENTO": "RAT_MAM_UNIFICADA",
+        "NUM_CHAMADO": getattr(ss, "num_chamado", ""),
+        "NUM_RELATORIO": getattr(ss, "num_relatorio", ""),
+        "OPERADORA_CONTRATO": getattr(
+            ss,
+            "operadora_contrato",
+            "",
+        ),
+        "CLIENTE_RAZAO": getattr(ss, "cliente_razao", ""),
+        "CNPJ_CPF": getattr(ss, "cnpj_cpf", ""),
+        "CONTATO_NOME": getattr(ss, "contato_nome", ""),
+        "CONTATO_TELEFONE_EMAIL": getattr(
+            ss,
+            "contato_telefone_email",
+            "",
+        ),
+        "ENDERECO_COMPLETO": getattr(
+            ss,
+            "endereco_completo",
+            "",
+        ),
+        "DISTANCIA_KM": getattr(ss, "distancia_km", ""),
+        "DATA_ATENDIMENTO": getattr(
+            ss,
+            "data_atendimento",
+            "",
+        ),
+        "INICIO_ATENDIMENTO": getattr(
+            ss,
+            "inicio_atend",
+            "",
+        ),
+        "TERMINO_ATENDIMENTO": getattr(
+            ss,
+            "termino_atend",
+            "",
+        ),
+        "ANALISTA_SUPORTE": getattr(
+            ss,
+            "analista_suporte",
+            "",
+        ),
+        "ANALISTA_INTEGRADORA": getattr(
+            ss,
+            "analista_integradora",
+            "",
+        ),
+        "ANALISTA_VALIDADOR": getattr(
+            ss,
+            "analista_validador",
+            "",
+        ),
+        "TIPO_ATENDIMENTO": getattr(
+            ss,
+            "tipo_atendimento",
+            "",
+        ),
+        "ANORMALIDADES": getattr(
+            ss,
+            "anormalidade_flags",
+            [],
+        ),
+        "MOTIVO_CHAMADO": getattr(
+            ss,
+            "motivo_chamado",
+            "",
+        ),
+        "CHECKLIST_TECNICO": getattr(
+            ss,
+            "checklist_tecnico",
+            {},
+        ),
+        "MATERIAL_UTILIZADO": getattr(
+            ss,
+            "material_utilizado",
+            "",
+        ),
+        "EQUIPAMENTOS_INSTALADOS": getattr(
+            ss,
+            "equip_instalados",
+            "",
+        ),
+        "EQUIPAMENTOS_RETIRADOS": getattr(
+            ss,
+            "equip_retirados",
+            "",
+        ),
+        "TESTES_REALIZADOS": getattr(
+            ss,
+            "testes_realizados",
+            [],
+        ),
+        "DESCRICAO_ATENDIMENTO": getattr(
+            ss,
+            "descricao_atendimento",
+            "",
+        ),
+        "OBSERVACOES_PENDENCIAS": getattr(
+            ss,
+            "observacoes_pendencias",
+            "",
+        ),
+        "NOME_TECNICO": getattr(ss, "nome_tecnico", ""),
+        "DOCUMENTO_TECNICO": getattr(ss, "doc_tecnico", ""),
+        "TELEFONE_TECNICO": getattr(ss, "tel_tecnico", ""),
+        "DATA_HORA_TECNICO": getattr(ss, "dt_tecnico", ""),
+        "NOME_CLIENTE_RESPONSAVEL": getattr(
+            ss,
+            "nome_cliente",
+            "",
+        ),
+        "DOCUMENTO_CLIENTE": getattr(ss, "doc_cliente", ""),
+        "TELEFONE_CLIENTE": getattr(ss, "tel_cliente", ""),
+        "DATA_HORA_CLIENTE": getattr(ss, "dt_cliente", ""),
+        "TOTAL_FOTOS": len(
+            getattr(ss, "fotos_chamado", []) or []
+        ),
+    }
+
+    lines = [
+        "&&&RAT_METADATA_BEGIN"
+    ]
+
+    for key, value in metadata.items():
+        lines.append(
+            f"&&&{key}={_clean_metadata_value(value)}"
+        )
+
+    lines.append("&&&RAT_METADATA_END")
+
+    return "\n".join(lines)
+
+
+def _insert_hidden_metadata(
+    page: fitz.Page,
+    ss,
+) -> None:
+    """
+    Insere os metadados em branco na página 3.
+
+    O texto é inserido antes das fotos. As fotos ficam visualmente
+    por cima, mas o conteúdo continua extraível com PyMuPDF.
+    """
+    metadata_text = _build_hidden_metadata(ss)
+
+    metadata_rect = fitz.Rect(
+        28,
+        48,
+        page.rect.width - 28,
+        page.rect.height - 28,
+    )
+
+    page.insert_textbox(
+        metadata_rect,
+        metadata_text,
+        fontsize=4,
+        fontname="helv",
+        color=(1, 1, 1),
+        align=0,
+        overlay=False,
+    )
+
+
 def _add_photo_pages(doc: fitz.Document, ss) -> None:
     """
     Adiciona páginas de fotos após as páginas principais da RAT.
@@ -736,8 +929,8 @@ def _add_photo_pages(doc: fitz.Document, ss) -> None:
     """
     photos = getattr(ss, "fotos_chamado", [])
 
-    if not isinstance(photos, (list, tuple)) or not photos:
-        return
+    if not isinstance(photos, (list, tuple)):
+        photos = []
 
     valid_photos = []
 
@@ -770,9 +963,6 @@ def _add_photo_pages(doc: fitz.Document, ss) -> None:
             # Uma imagem inválida não interrompe a geração da RAT.
             continue
 
-    if not valid_photos:
-        return
-
     # Página A4 em pontos.
     page_width = 595
     page_height = 842
@@ -796,13 +986,24 @@ def _add_photo_pages(doc: fitz.Document, ss) -> None:
     cell_width = usable_width / 2
     image_height = usable_height / 2
 
-    for page_start in range(0, len(valid_photos), 4):
+    total_pages = max(
+        1,
+        (len(valid_photos) + 3) // 4,
+    )
+
+    for page_number in range(total_pages):
+        page_start = page_number * 4
         page_photos = valid_photos[page_start:page_start + 4]
 
         page = doc.new_page(
             width=page_width,
             height=page_height,
         )
+
+        # O bloco &&& fica sempre na primeira página de fotos,
+        # ou seja, na página 3 do PDF final.
+        if page_number == 0:
+            _insert_hidden_metadata(page, ss)
 
         page.insert_text(
             (margin_x, 30),
