@@ -518,7 +518,7 @@ def step5_aceite_assinaturas() -> None:
                     st.image(
                         BytesIO(conteudo),
                         caption=f"{indice + 1}. {nome}",
-                        use_container_width=True,
+                        use_column_width=True,
                     )
 
                 except Exception as erro:
