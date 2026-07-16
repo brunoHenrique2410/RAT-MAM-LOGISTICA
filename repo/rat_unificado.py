@@ -634,7 +634,7 @@ def generate_pdf_from_state(ss) -> bytes:
     Abre o template RAT_MAM_UNIFICADA_VF.pdf (2 páginas),
     preenche e retorna os bytes do PDF.
     """
-    doc, page1 = open_pdf_template(PDF_BASE_PATH, hint="RAT_MAM_UNIFICADA")
+    doc, page1 = open_pdf_template(PDF_BASE_PATH, hint="RAT_MAM_UNIFICADA_VF")
 
     _fill_page1(page1, ss)
 
