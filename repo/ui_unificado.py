@@ -14,10 +14,7 @@ import common.ui as ui_componentes
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(THIS_DIR)
 LOGO_PATH = os.path.join(PROJECT_ROOT, "assets", "selo_evernex_maminfo.png")
-PDF_BASE_PATH = os.path.join(
-    PROJECT_ROOT,
-    "pdf_templates",
-    "RAT_MAM_UNIFICADA.pdf",
+
 
 
 # ----------------- ESTILO / CABEÇALHO -----------------
