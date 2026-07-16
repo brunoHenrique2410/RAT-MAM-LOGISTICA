@@ -3,6 +3,8 @@ import sys
 from io import BytesIO
 from datetime import datetime, date
 
+from PIL import Image, ImageOps
+
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(THIS_DIR)
 PDF_BASE_PATH = os.path.join(
@@ -86,6 +88,10 @@ def _init_rat_defaults() -> None:
             "dt_cliente": "",
             "sig_tec_png": None,
             "sig_cli_png": None,
+            # --------- FOTOS DO CHAMADO ---------
+            "fotos_chamado": [],
+            "fotos_chamado_hashes": set(),
+            "fotos_upload_version": 0,
             # --------- CONTROLE ---------
             "trigger_generate": False,
         }
@@ -632,6 +638,236 @@ def _fill_page2(page: fitz.Page, ss) -> None:
         )
 
 
+
+# =============== FOTOS DO CHAMADO ===============
+
+
+def _get_photo_bytes(photo) -> bytes:
+    """
+    Aceita foto armazenada como:
+    - dict com a chave 'conteudo';
+    - UploadedFile;
+    - bytes/bytearray.
+    """
+    if isinstance(photo, dict):
+        raw = photo.get("conteudo", b"")
+    elif hasattr(photo, "getvalue"):
+        raw = photo.getvalue()
+    elif isinstance(photo, (bytes, bytearray)):
+        raw = bytes(photo)
+    else:
+        raw = b""
+
+    return bytes(raw) if raw else b""
+
+
+def _normalize_photo_for_pdf(raw: bytes) -> bytes:
+    """
+    Corrige a orientação EXIF e converte a imagem para JPEG RGB,
+    facilitando a inclusão no PDF.
+    """
+    with Image.open(BytesIO(raw)) as image:
+        image = ImageOps.exif_transpose(image)
+
+        if image.mode not in ("RGB", "L"):
+            background = Image.new("RGB", image.size, "white")
+
+            if "A" in image.getbands():
+                background.paste(image, mask=image.getchannel("A"))
+            else:
+                background.paste(image)
+
+            image = background
+        elif image.mode == "L":
+            image = image.convert("RGB")
+
+        output = BytesIO()
+        image.save(
+            output,
+            format="JPEG",
+            quality=88,
+            optimize=True,
+        )
+        return output.getvalue()
+
+
+def _fit_rect_keep_aspect(
+    source_width: float,
+    source_height: float,
+    target: fitz.Rect,
+) -> fitz.Rect:
+    """
+    Calcula um retângulo centralizado dentro de target,
+    preservando a proporção original da foto.
+    """
+    if source_width <= 0 or source_height <= 0:
+        return target
+
+    source_ratio = source_width / source_height
+    target_ratio = target.width / target.height
+
+    if source_ratio > target_ratio:
+        width = target.width
+        height = width / source_ratio
+    else:
+        height = target.height
+        width = height * source_ratio
+
+    x0 = target.x0 + (target.width - width) / 2
+    y0 = target.y0 + (target.height - height) / 2
+
+    return fitz.Rect(
+        x0,
+        y0,
+        x0 + width,
+        y0 + height,
+    )
+
+
+def _add_photo_pages(doc: fitz.Document, ss) -> None:
+    """
+    Adiciona páginas de fotos após as páginas principais da RAT.
+
+    Layout:
+    - 4 fotos por página;
+    - grade 2 x 2;
+    - legenda simples abaixo de cada foto;
+    - cria quantas páginas forem necessárias.
+    """
+    photos = getattr(ss, "fotos_chamado", [])
+
+    if not isinstance(photos, (list, tuple)) or not photos:
+        return
+
+    valid_photos = []
+
+    for index, photo in enumerate(photos, start=1):
+        raw = _get_photo_bytes(photo)
+
+        if not raw:
+            continue
+
+        if isinstance(photo, dict):
+            name = str(photo.get("nome") or f"Foto {index}")
+        else:
+            name = str(getattr(photo, "name", f"Foto {index}"))
+
+        try:
+            normalized = _normalize_photo_for_pdf(raw)
+
+            with Image.open(BytesIO(normalized)) as image:
+                width, height = image.size
+
+            valid_photos.append(
+                {
+                    "name": name,
+                    "bytes": normalized,
+                    "width": width,
+                    "height": height,
+                }
+            )
+        except Exception:
+            # Uma imagem inválida não interrompe a geração da RAT.
+            continue
+
+    if not valid_photos:
+        return
+
+    # Página A4 em pontos.
+    page_width = 595
+    page_height = 842
+
+    margin_x = 32
+    margin_top = 55
+    margin_bottom = 30
+    gap_x = 18
+    gap_y = 28
+    caption_height = 18
+
+    usable_width = page_width - (2 * margin_x) - gap_x
+    usable_height = (
+        page_height
+        - margin_top
+        - margin_bottom
+        - gap_y
+        - (2 * caption_height)
+    )
+
+    cell_width = usable_width / 2
+    image_height = usable_height / 2
+
+    for page_start in range(0, len(valid_photos), 4):
+        page_photos = valid_photos[page_start:page_start + 4]
+
+        page = doc.new_page(
+            width=page_width,
+            height=page_height,
+        )
+
+        page.insert_text(
+            (margin_x, 30),
+            "REGISTRO FOTOGRÁFICO DO CHAMADO",
+            fontsize=14,
+            fontname="helv",
+            color=(0, 0, 0),
+        )
+
+        for local_index, photo in enumerate(page_photos):
+            row = local_index // 2
+            column = local_index % 2
+
+            x0 = margin_x + column * (cell_width + gap_x)
+            y0 = margin_top + row * (
+                image_height + caption_height + gap_y
+            )
+
+            cell_rect = fitz.Rect(
+                x0,
+                y0,
+                x0 + cell_width,
+                y0 + image_height,
+            )
+
+            photo_rect = _fit_rect_keep_aspect(
+                photo["width"],
+                photo["height"],
+                cell_rect,
+            )
+
+            # Moldura leve ao redor da área da foto.
+            page.draw_rect(
+                cell_rect,
+                color=(0.65, 0.65, 0.65),
+                width=0.6,
+            )
+
+            page.insert_image(
+                photo_rect,
+                stream=photo["bytes"],
+                keep_proportion=True,
+                overlay=True,
+            )
+
+            global_index = page_start + local_index + 1
+            caption = f"Foto {global_index:02d} - {photo['name']}"
+
+            caption_rect = fitz.Rect(
+                x0,
+                y0 + image_height + 3,
+                x0 + cell_width,
+                y0 + image_height + caption_height,
+            )
+
+            page.insert_textbox(
+                caption_rect,
+                caption,
+                fontsize=8,
+                fontname="helv",
+                color=(0, 0, 0),
+                align=1,
+            )
+
+
 # =============== GERAÇÃO DO PDF ===============
 
 
@@ -647,6 +883,9 @@ def generate_pdf_from_state(ss) -> bytes:
     if doc.page_count >= 2:
         page2 = doc[1]
         _fill_page2(page2, ss)
+
+    # Adiciona as páginas de fotos após as páginas principais.
+    _add_photo_pages(doc, ss)
 
     out = BytesIO()
     doc.save(out)
