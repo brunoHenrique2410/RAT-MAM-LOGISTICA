@@ -74,14 +74,15 @@ def _step_selector() -> int:
     if "current_step" not in ss:
         ss.current_step = 1
 
-    ss.current_step = max(1, min(int(ss.current_step), 5))
+    ss.current_step = max(1, min(int(ss.current_step), 6))
 
     steps = {
         1: "Dados do Relatório & Local",
         2: "Atendimento & Testes",
         3: "Checklist Técnico",
         4: "Materiais & Observações",
-        5: "Aceite & Assinaturas",
+        5: "Fotos do Chamado",
+        6: "Aceite & Assinaturas",
     }
 
     step = ss.current_step
@@ -349,86 +350,16 @@ def step4_materiais_obs() -> None:
     )
 
 
-# ----------------- ETAPA 5 – ACEITE & ASSINATURAS -----------------
+# ----------------- ETAPA 5 – FOTOS DO CHAMADO -----------------
 
 
-def step5_aceite_assinaturas() -> None:
+def step5_fotos_chamado() -> None:
     ss = st.session_state
-    st.subheader("5) Aceite, Assinaturas e Fotos")
+    st.subheader("5) Fotos do Chamado")
 
-    # ----------------- TÉCNICO -----------------
-    st.markdown("#### Técnico MAMINFO")
-
-    c1, c2, c3, c4 = st.columns(4)
-
-    with c1:
-        ss.nome_tecnico = st.text_input(
-            "Nome Técnico",
-            value=ss.nome_tecnico,
-        )
-
-    with c2:
-        ss.doc_tecnico = st.text_input(
-            "Documento Técnico",
-            value=ss.doc_tecnico,
-        )
-
-    with c3:
-        ss.tel_tecnico = st.text_input(
-            "Telefone Técnico",
-            value=ss.tel_tecnico,
-        )
-
-    with c4:
-        ss.dt_tecnico = st.text_input(
-            "Data e hora (Técnico)",
-            value=ss.dt_tecnico,
-        )
-
-    st.markdown("### Assinatura do técnico")
-    ui_componentes.assinatura_tecnico_png()
-
-    st.markdown("---")
-
-    # ----------------- CLIENTE -----------------
-    st.markdown("#### Cliente")
-
-    c5, c6, c7, c8 = st.columns(4)
-
-    with c5:
-        ss.nome_cliente = st.text_input(
-            "Nome cliente",
-            value=ss.nome_cliente,
-        )
-
-    with c6:
-        ss.doc_cliente = st.text_input(
-            "Documento cliente",
-            value=ss.doc_cliente,
-        )
-
-    with c7:
-        ss.tel_cliente = st.text_input(
-            "Telefone cliente",
-            value=ss.tel_cliente,
-        )
-
-    with c8:
-        ss.dt_cliente = st.text_input(
-            "Data e hora (Cliente)",
-            value=ss.dt_cliente,
-        )
-
-    st.markdown("### Assinatura do cliente")
-    ui_componentes.assinatura_cliente_png()
-
-    st.markdown("---")
-
-    # ----------------- FOTOS DO CHAMADO -----------------
-    st.markdown("## 📸 Fotos do Chamado")
     st.caption(
         "Selecione todas as fotos que deverão ser incluídas na RAT. "
-        "Nesta primeira etapa, as imagens ficam armazenadas para conferência."
+        "As imagens ficam armazenadas para conferência antes da assinatura."
     )
 
     if "fotos_chamado" not in ss:
@@ -541,6 +472,80 @@ def step5_aceite_assinaturas() -> None:
         st.warning("Nenhuma foto do chamado foi adicionada ainda.")
 
 
+# ----------------- ETAPA 6 – ACEITE & ASSINATURAS -----------------
+
+
+def step6_aceite_assinaturas() -> None:
+    ss = st.session_state
+    st.subheader("6) Aceite & Assinaturas")
+
+    # ----------------- TÉCNICO -----------------
+    st.markdown("#### Técnico MAMINFO")
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    with c1:
+        ss.nome_tecnico = st.text_input(
+            "Nome Técnico",
+            value=ss.nome_tecnico,
+        )
+
+    with c2:
+        ss.doc_tecnico = st.text_input(
+            "Documento Técnico",
+            value=ss.doc_tecnico,
+        )
+
+    with c3:
+        ss.tel_tecnico = st.text_input(
+            "Telefone Técnico",
+            value=ss.tel_tecnico,
+        )
+
+    with c4:
+        ss.dt_tecnico = st.text_input(
+            "Data e hora (Técnico)",
+            value=ss.dt_tecnico,
+        )
+
+    st.markdown("### Assinatura do técnico")
+    ui_componentes.assinatura_tecnico_png()
+
+    st.markdown("---")
+
+    # ----------------- CLIENTE -----------------
+    st.markdown("#### Cliente")
+
+    c5, c6, c7, c8 = st.columns(4)
+
+    with c5:
+        ss.nome_cliente = st.text_input(
+            "Nome cliente",
+            value=ss.nome_cliente,
+        )
+
+    with c6:
+        ss.doc_cliente = st.text_input(
+            "Documento cliente",
+            value=ss.doc_cliente,
+        )
+
+    with c7:
+        ss.tel_cliente = st.text_input(
+            "Telefone cliente",
+            value=ss.tel_cliente,
+        )
+
+    with c8:
+        ss.dt_cliente = st.text_input(
+            "Data e hora (Cliente)",
+            value=ss.dt_cliente,
+        )
+
+    st.markdown("### Assinatura do cliente")
+    ui_componentes.assinatura_cliente_png()
+
+
 # ----------------- RENDER PRINCIPAL -----------------
 
 
@@ -564,7 +569,9 @@ def render_layout() -> None:
     elif step == 4:
         step4_materiais_obs()
     elif step == 5:
-        step5_aceite_assinaturas()
+        step5_fotos_chamado()
+    elif step == 6:
+        step6_aceite_assinaturas()
 
     st.markdown("---")
 
@@ -584,7 +591,7 @@ def render_layout() -> None:
                 ss.current_step = 2
                 st.rerun()
 
-    elif step in (2, 3, 4):
+    elif step in (2, 3, 4, 5):
         col_back, col_info, col_next = st.columns([1, 2, 1])
 
         with col_back:
@@ -597,7 +604,7 @@ def render_layout() -> None:
                 st.rerun()
 
         with col_info:
-            st.caption(f"Etapa {step} de 5.")
+            st.caption(f"Etapa {step} de 6.")
 
         with col_next:
             if st.button(
@@ -616,13 +623,13 @@ def render_layout() -> None:
             if st.button(
                 "⬅️ Voltar",
                 use_container_width=True,
-                key="btn_voltar_5",
+                key="btn_voltar_6",
             ):
-                ss.current_step = 4
+                ss.current_step = 5
                 st.rerun()
 
         with col_info:
-            st.caption("Revise os dados e gere a RAT.")
+            st.caption("Revise os dados, colete as assinaturas e gere a RAT.")
 
         with col_generate:
             if st.button(
