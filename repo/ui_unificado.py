@@ -16,7 +16,6 @@ PROJECT_ROOT = os.path.dirname(THIS_DIR)
 LOGO_PATH = os.path.join(PROJECT_ROOT, "assets", "selo_evernex_maminfo.png")
 
 
-
 # ----------------- ESTILO / CABEÇALHO -----------------
 
 
@@ -355,6 +354,7 @@ def step5_aceite_assinaturas() -> None:
     ss = st.session_state
     st.subheader("5) Aceite & Assinaturas")
 
+    # ----------------- TÉCNICO -----------------
     st.markdown("#### Técnico MAMINFO")
 
     c1, c2, c3, c4 = st.columns(4)
@@ -375,7 +375,12 @@ def step5_aceite_assinaturas() -> None:
             "Data e hora (Técnico)", value=ss.dt_tecnico
         )
 
+    st.markdown("### Assinatura do técnico")
+    ui_componentes.assinatura_tecnico_png()
+
     st.markdown("---")
+
+    # ----------------- CLIENTE -----------------
     st.markdown("#### Cliente")
 
     c5, c6, c7, c8 = st.columns(4)
@@ -396,10 +401,8 @@ def step5_aceite_assinaturas() -> None:
             "Data e hora (Cliente)", value=ss.dt_cliente
         )
 
-    st.markdown("---")
-    st.markdown("### Assinaturas digitais")
-
-    ui_componentes.assinatura_dupla_png()
+    st.markdown("### Assinatura do cliente")
+    ui_componentes.assinatura_cliente_png()
 
 
 # ----------------- RENDER PRINCIPAL -----------------
