@@ -5,6 +5,10 @@ from datetime import datetime, date
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(THIS_DIR)
+PDF_BASE_PATH = os.path.join(
+    PROJECT_ROOT,
+    "pdf_templates",
+    "RAT_MAM_UNIFICADA_VF.pdf",
 
 for path in [THIS_DIR, PROJECT_ROOT]:
     if path not in sys.path:
