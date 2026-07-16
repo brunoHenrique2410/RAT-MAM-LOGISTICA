@@ -68,7 +68,7 @@ def header_bar() -> None:
 
 
 def _step_selector() -> int:
-    """Mostra apenas o progresso atual, sem permitir seleção manual da etapa."""
+    """Mostra o progresso atual em formato visual, sem permitir pular etapas."""
     ss = st.session_state
 
     if "current_step" not in ss:
@@ -77,20 +77,151 @@ def _step_selector() -> int:
     ss.current_step = max(1, min(int(ss.current_step), 6))
 
     steps = {
-        1: "Dados do Relatório & Local",
-        2: "Atendimento & Testes",
-        3: "Checklist Técnico",
-        4: "Materiais & Observações",
-        5: "Fotos do Chamado",
-        6: "Aceite & Assinaturas",
+        1: "Dados",
+        2: "Atendimento",
+        3: "Checklist",
+        4: "Materiais",
+        5: "Fotos",
+        6: "Assinaturas",
     }
 
     step = ss.current_step
-    progresso = step / len(steps)
+    total_steps = len(steps)
+    progresso = step / total_steps
 
-    st.markdown(f"### Etapa {step} de {len(steps)}")
-    st.caption(steps[step])
+    cards = []
+
+    for numero, titulo in steps.items():
+        if numero < step:
+            classe = "step-done"
+            icone = "✓"
+        elif numero == step:
+            classe = "step-current"
+            icone = str(numero)
+        else:
+            classe = "step-pending"
+            icone = str(numero)
+
+        cards.append(
+            f"""
+            <div class="progress-step {classe}">
+                <div class="progress-circle">{icone}</div>
+                <div class="progress-label">{titulo}</div>
+            </div>
+            """
+        )
+
+    st.markdown(
+        """
+        <style>
+            .progress-wrapper {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 8px;
+                width: 100%;
+                margin: 4px 0 14px 0;
+            }
+
+            .progress-step {
+                position: relative;
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+                min-width: 0;
+            }
+
+            .progress-step:not(:last-child)::after {
+                content: "";
+                position: absolute;
+                top: 17px;
+                left: calc(50% + 22px);
+                width: calc(100% - 44px);
+                height: 3px;
+                background: #374151;
+                z-index: 0;
+            }
+
+            .progress-step.step-done:not(:last-child)::after {
+                background: #22c55e;
+            }
+
+            .progress-circle {
+                width: 36px;
+                height: 36px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: 700;
+                border: 2px solid #4b5563;
+                background: #111827;
+                color: #9ca3af;
+                z-index: 1;
+            }
+
+            .step-done .progress-circle {
+                background: #16a34a;
+                border-color: #22c55e;
+                color: #ffffff;
+            }
+
+            .step-current .progress-circle {
+                background: #2563eb;
+                border-color: #60a5fa;
+                color: #ffffff;
+                box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.18);
+            }
+
+            .progress-label {
+                margin-top: 8px;
+                font-size: 0.78rem;
+                line-height: 1.15;
+                color: #9ca3af;
+                word-break: break-word;
+            }
+
+            .step-current .progress-label {
+                color: #ffffff;
+                font-weight: 700;
+            }
+
+            .step-done .progress-label {
+                color: #86efac;
+            }
+
+            @media (max-width: 800px) {
+                .progress-label {
+                    font-size: 0.65rem;
+                }
+
+                .progress-circle {
+                    width: 30px;
+                    height: 30px;
+                }
+
+                .progress-step:not(:last-child)::after {
+                    top: 14px;
+                    left: calc(50% + 18px);
+                    width: calc(100% - 36px);
+                }
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f'<div class="progress-wrapper">{"".join(cards)}</div>',
+        unsafe_allow_html=True,
+    )
+
     st.progress(progresso)
+    st.caption(
+        f"Etapa {step} de {total_steps} — {steps[step]}"
+    )
     st.divider()
 
     return step
@@ -371,6 +502,9 @@ def step5_fotos_chamado() -> None:
     if "fotos_upload_version" not in ss:
         ss.fotos_upload_version = 0
 
+    if "foto_ampliada_hash" not in ss:
+        ss.foto_ampliada_hash = None
+
     novas_fotos = st.file_uploader(
         "Selecionar fotos do chamado",
         type=["jpg", "jpeg", "png", "webp"],
@@ -409,6 +543,44 @@ def step5_fotos_chamado() -> None:
             f"Total selecionado: {len(ss.fotos_chamado)} foto(s)."
         )
 
+        # Visualização ampliada da foto selecionada
+        if ss.foto_ampliada_hash:
+            foto_ampliada = next(
+                (
+                    item
+                    for item in ss.fotos_chamado
+                    if isinstance(item, dict)
+                    and item.get("hash") == ss.foto_ampliada_hash
+                ),
+                None,
+            )
+
+            if foto_ampliada:
+                st.markdown("### 🔍 Conferência ampliada")
+
+                col_preview, col_close = st.columns([5, 1])
+
+                with col_preview:
+                    st.image(
+                        BytesIO(foto_ampliada.get("conteudo", b"")),
+                        caption=foto_ampliada.get(
+                            "nome",
+                            "Foto selecionada",
+                        ),
+                        use_column_width=True,
+                    )
+
+                with col_close:
+                    if st.button(
+                        "✖ Fechar",
+                        key="fechar_foto_ampliada",
+                        use_container_width=True,
+                    ):
+                        ss.foto_ampliada_hash = None
+                        st.rerun()
+
+                st.markdown("---")
+
         colunas = st.columns(3)
 
         for indice, foto in enumerate(ss.fotos_chamado):
@@ -444,17 +616,35 @@ def step5_fotos_chamado() -> None:
                         use_column_width=True,
                     )
 
-                    if st.button(
-                        "🗑️ Remover esta foto",
-                        key=f"remover_foto_{foto_hash or indice}",
-                        use_container_width=True,
-                    ):
+                    col_zoom, col_remove = st.columns(2)
+
+                    with col_zoom:
+                        if st.button(
+                            "🔍 Ampliar",
+                            key=f"ampliar_foto_{foto_hash or indice}",
+                            use_container_width=True,
+                        ):
+                            ss.foto_ampliada_hash = foto_hash
+                            st.rerun()
+
+                    with col_remove:
+                        remover_foto = st.button(
+                            "🗑️ Remover",
+                            key=f"remover_foto_{foto_hash or indice}",
+                            use_container_width=True,
+                        )
+
+                    if remover_foto:
                         foto_removida = ss.fotos_chamado.pop(indice)
 
                         if isinstance(foto_removida, dict):
                             hash_removido = foto_removida.get("hash")
+
                             if hash_removido:
                                 ss.fotos_chamado_hashes.discard(hash_removido)
+
+                            if ss.foto_ampliada_hash == hash_removido:
+                                ss.foto_ampliada_hash = None
 
                         ss.fotos_upload_version += 1
                         st.rerun()
@@ -473,6 +663,7 @@ def step5_fotos_chamado() -> None:
         ):
             ss.fotos_chamado = []
             ss.fotos_chamado_hashes = set()
+            ss.foto_ampliada_hash = None
             ss.fotos_upload_version += 1
             st.rerun()
 
