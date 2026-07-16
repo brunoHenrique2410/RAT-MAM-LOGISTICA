@@ -1,11 +1,25 @@
-# common/ui.py — componentes UI: assinaturas, scanner mínimo, fotos
+# repo/ui_unificado.py
+#
+# Layout em modo escuro para a RAT MAM Unificada.
+# - Navegação por etapas via st.radio (topo)
+# - Preenche st.session_state com os campos usados em rat_unificado.py
+#   (NÃO mexe em nenhuma posição do PDF, só nos valores).
 
+import os
 from io import BytesIO
-import hashlib
+from datetime import date
 
 import numpy as np
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
+
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(THIS_DIR)
+LOGO_PATH = os.path.join(PROJECT_ROOT, "assets", "selo_evernex_maminfo.png")
+
+
+
+# ----------------- ASSINATURAS DIGITAIS -----------------
 
 
 def _signature_from_canvas_as_png(
@@ -13,6 +27,7 @@ def _signature_from_canvas_as_png(
     white_threshold: int = 245,
     min_ink_px: int = 10,
 ):
+    """Converte o desenho do canvas em PNG transparente."""
     if arr is None or getattr(arr, "ndim", 0) != 3 or arr.shape[2] < 4:
         return None
 
@@ -32,24 +47,24 @@ def _signature_from_canvas_as_png(
         return None
 
     height, width = red.shape
-    out = np.zeros((height, width, 4), dtype=np.uint8)
-    out[..., 0:3] = 255
-    out[stroke_mask, 0:3] = [0, 0, 0]
-    out[..., 3] = 0
-    out[stroke_mask, 3] = 255
+    output = np.zeros((height, width, 4), dtype=np.uint8)
+    output[..., 0:3] = 255
+    output[stroke_mask, 0:3] = [0, 0, 0]
+    output[..., 3] = 0
+    output[stroke_mask, 3] = 255
 
     from PIL import Image as PILImage
 
     buffer = BytesIO()
-    PILImage.fromarray(out, "RGBA").save(buffer, format="PNG")
+    PILImage.fromarray(output, "RGBA").save(buffer, format="PNG")
     return buffer.getvalue()
 
 
 def assinatura_tecnico_png() -> None:
-    """Exibe e salva somente a assinatura do técnico."""
+    """Exibe e salva a assinatura do técnico."""
     ss = st.session_state
 
-    tecnico = st_canvas(
+    canvas = st_canvas(
         fill_color="rgba(0,0,0,0)",
         stroke_width=3,
         stroke_color="#000000",
@@ -71,7 +86,7 @@ def assinatura_tecnico_png() -> None:
             use_container_width=True,
         ):
             ss.sig_tec_png = _signature_from_canvas_as_png(
-                getattr(tecnico, "image_data", None)
+                getattr(canvas, "image_data", None)
             )
 
             if ss.sig_tec_png:
@@ -90,10 +105,10 @@ def assinatura_tecnico_png() -> None:
 
 
 def assinatura_cliente_png() -> None:
-    """Exibe e salva somente a assinatura do cliente."""
+    """Exibe e salva a assinatura do cliente."""
     ss = st.session_state
 
-    cliente = st_canvas(
+    canvas = st_canvas(
         fill_color="rgba(0,0,0,0)",
         stroke_width=3,
         stroke_color="#000000",
@@ -115,7 +130,7 @@ def assinatura_cliente_png() -> None:
             use_container_width=True,
         ):
             ss.sig_cli_png = _signature_from_canvas_as_png(
-                getattr(cliente, "image_data", None)
+                getattr(canvas, "image_data", None)
             )
 
             if ss.sig_cli_png:
@@ -133,86 +148,483 @@ def assinatura_cliente_png() -> None:
             st.info("Assinatura do cliente removida.")
 
 
-def assinatura_dupla_png() -> None:
-    """
-    Mantida por compatibilidade com outras telas que ainda chamem
-    assinatura_dupla_png().
-    """
-    st.markdown("**Assinatura do TÉCNICO**")
-    assinatura_tecnico_png()
+# ----------------- ESTILO / CABEÇALHO -----------------
 
+
+def apply_dark_full_layout() -> None:
+    """CSS básico de modo escuro + largura full."""
+    st.markdown(
+        """
+        <style>
+            /* fundo geral */
+            .stApp {
+                background-color: #050816;
+            }
+            .block-container {
+                padding-top: 1.5rem;
+                padding-bottom: 2rem;
+                max-width: 1200px;
+            }
+            /* campos */
+            .stTextInput>div>div>input,
+            .stTextArea textarea,
+            .stDateInput input,
+            .stMultiselect>div>div>input,
+            .stSelectbox>div>div>select {
+                background-color: #111827 !important;
+                color: #e5e7eb !important;
+            }
+            /* labels */
+            label, .stRadio>div {
+                color: #e5e7eb !important;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def header_bar() -> None:
+    """Logo + título."""
+    col_logo, col_title = st.columns([1, 4])
+    with col_logo:
+        if os.path.exists(LOGO_PATH):
+            st.image(LOGO_PATH, width=140)
+        else:
+            st.markdown("### Evernex / MAMINFO")
+    with col_title:
+        st.markdown("## RAT MAM Unificada")
+        st.caption("Relatório de Atendimento Técnico – Modelo Unificado")
+
+
+def _step_selector() -> int:
+    """Mostra apenas o progresso atual, sem permitir seleção manual da etapa."""
+    ss = st.session_state
+
+    if "current_step" not in ss:
+        ss.current_step = 1
+
+    ss.current_step = max(1, min(int(ss.current_step), 5))
+
+    steps = {
+        1: "Dados do Relatório & Local",
+        2: "Atendimento & Testes",
+        3: "Checklist Técnico",
+        4: "Materiais & Observações",
+        5: "Aceite & Assinaturas",
+    }
+
+    step = ss.current_step
+    progresso = step / len(steps)
+
+    st.markdown(f"### Etapa {step} de {len(steps)}")
+    st.caption(steps[step])
+    st.progress(progresso)
     st.divider()
 
-    st.markdown("**Assinatura do CLIENTE**")
+    return step
+
+
+# ----------------- ETAPA 1 -----------------
+
+
+def step1_dados_relatorio() -> None:
+    ss = st.session_state
+    st.subheader("1) Dados do Relatório & Local de Atendimento")
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        ss.num_chamado = st.text_input("Nº Chamado", value=ss.num_chamado)
+    with c2:
+        ss.num_relatorio = st.text_input("Nº Relatório", value=ss.num_relatorio)
+    with c3:
+        ss.operadora_contrato = st.text_input(
+            "Operadora / Contrato", value=ss.operadora_contrato
+        )
+
+    st.markdown("---")
+
+    c4, c5 = st.columns([2, 1])
+    with c4:
+        ss.cliente_razao = st.text_input(
+            "Cliente / Razão Social", value=ss.cliente_razao
+        )
+    with c5:
+        ss.cnpj_cpf = st.text_input("CNPJ/CPF", value=ss.cnpj_cpf)
+
+    c6, c7, c8 = st.columns([2, 1, 1])
+    with c6:
+        ss.contato_nome = st.text_input("Contato (nome)", value=ss.contato_nome)
+    with c7:
+        ss.contato_telefone_email = st.text_input(
+            "Telefone / E-mail", value=ss.contato_telefone_email
+        )
+    with c8:
+        # Distância em texto (PDF converte para float se possível)
+        ss.distancia_km = st.text_input(
+            "Distância (KM)", value=str(ss.distancia_km or "")
+        )
+
+    st.text("")  # pequeno espaçamento
+
+    ss.endereco_completo = st.text_area(
+        "Endereço Completo (Rua, nº, compl., bairro, cidade/UF)",
+        value=ss.endereco_completo,
+        height=80,
+    )
+
+    st.markdown("### Horários e Deslocamento")
+
+    # Data do atendimento
+    try:
+        default_data = (
+            date.fromisoformat(ss.data_atendimento)
+            if ss.data_atendimento
+            else date.today()
+        )
+    except Exception:
+        default_data = date.today()
+
+    c9, c10, c11 = st.columns(3)
+    with c9:
+        ss.data_atendimento = st.date_input("Data", value=default_data)
+    with c10:
+        ss.inicio_atend = st.text_input(
+            "Início (hh:mm)", value=str(ss.inicio_atend or "")
+        )
+    with c11:
+        ss.termino_atend = st.text_input(
+            "Término (hh:mm)", value=str(ss.termino_atend or "")
+        )
+
+
+# ----------------- ETAPA 2 -----------------
+
+
+ANORMALIDADE_OPCOES = [
+    "Interrupção total",
+    "Sem sincronismo",
+    "Mensagem com erro",
+    "Intermitência / Quedas",
+    "Taxa de erro",
+    "Sem portadora",
+    "Lentidão",
+    "Ruído",
+    "Outros",
+]
+
+TIPO_ATENDIMENTO_OPCOES = [
+    "",
+    "Instalação",
+    "Ativação",
+    "Manut. Corretiva",
+    "Manut. Preventiva",
+    "Verificação",
+    "Retirada",
+    "Passagem de cabo",
+    "Outros",
+]
+
+
+def step2_atendimento_testes() -> None:
+    ss = st.session_state
+    st.subheader("2) Atendimento & Testes")
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        ss.analista_suporte = st.text_input(
+            "Analista Suporte", value=ss.analista_suporte
+        )
+    with c2:
+        ss.analista_integradora = st.text_input(
+            "Analista Integradora (MAMINFO)", value=ss.analista_integradora
+        )
+    with c3:
+        ss.analista_validador = st.text_input(
+            "Analista validador (NOC / Projetos)", value=ss.analista_validador
+        )
+
+    st.markdown("### Tipo de Atendimento")
+
+    ss.tipo_atendimento = st.selectbox(
+        "Tipo de Atendimento",
+        options=TIPO_ATENDIMENTO_OPCOES,
+        index=TIPO_ATENDIMENTO_OPCOES.index(ss.tipo_atendimento)
+        if ss.tipo_atendimento in TIPO_ATENDIMENTO_OPCOES
+        else 0,
+    )
+
+    st.markdown("### Anormalidade / Motivo do Chamado")
+
+    # multiselect -> anormalidade_flags (lista de strings)
+    default_flags = (
+        [f for f in getattr(ss, "anormalidade_flags", []) if f in ANORMALIDADE_OPCOES]
+        if isinstance(getattr(ss, "anormalidade_flags", []), list)
+        else []
+    )
+
+    ss.anormalidade_flags = st.multiselect(
+        "Selecione as anormalidades encontradas",
+        options=ANORMALIDADE_OPCOES,
+        default=default_flags,
+        help="Essas opções serão usadas para marcar os X no PDF.",
+    )
+# ----------------- ETAPA 3 – CHECKLIST TÉCNICO -----------------
+
+
+CHECKLIST_ITENS = [
+    "Circuito corretamente instalado",
+    "Teste de circuito comutado",
+    "Alimentação adequada",
+    "Aterramento adequado",
+    "Mensagem com erro",
+    "Intermitência / Quedas",
+    "Sem portadora",
+    "Fiação interna adequada",
+    "Cabo de rede adequado",
+    "Equipamentos em condições",
+    "Ambiente/infra adequada",
+]
+
+
+def step3_checklist_tecnico() -> None:
+    ss = st.session_state
+    st.subheader("3) Checklist Técnico (SIM / NÃO)")
+
+    # garante que é dict
+    if not isinstance(getattr(ss, "checklist_tecnico", None), dict):
+        ss.checklist_tecnico = {}
+
+    for item in CHECKLIST_ITENS:
+        atual = ss.checklist_tecnico.get(item, "")
+        opts = ["", "Sim", "Não"]
+        idx = opts.index(atual) if atual in opts else 0
+        escolha = st.radio(
+            item,
+            options=opts,
+            index=idx,
+            horizontal=True,
+            key=f"chk_{item}",
+        )
+        ss.checklist_tecnico[item] = escolha
+
+    st.caption(
+        "As respostas serão consolidadas em texto no campo de Checklist do PDF. "
+        "Se quiser evoluir para marcar X em cada Sim/Não, depois mapeamos item a item."
+    )
+
+
+# ----------------- ETAPA 4 – MATERIAIS & OBSERVAÇÕES -----------------
+
+
+TESTES_OPCOES = [
+    "Ping",
+    "Chamadas",
+    "Navegação",
+    "Teste de voz",
+    "Teste de dados",
+    "Velocidade",
+    "Outros",
+]
+
+
+def step4_materiais_obs() -> None:
+    ss = st.session_state
+    st.subheader("4) Materiais & Observações")
+
+    st.markdown("### Materiais & Equipamentos")
+
+    ss.material_utilizado = st.text_area(
+        "Material utilizado",
+        value=ss.material_utilizado,
+        height=80,
+    )
+
+    ss.equip_instalados = st.text_area(
+        "Equipamentos (Instalados / Existentes no Cliente)",
+        value=ss.equip_instalados,
+        height=80,
+    )
+
+    ss.equip_retirados = st.text_area(
+        "Equipamentos Retirados (se houver)",
+        value=ss.equip_retirados,
+        height=80,
+    )
+
+    st.markdown("### Observações do Atendimento")
+
+    default_testes = (
+        [t for t in getattr(ss, "testes_realizados", []) if t in TESTES_OPCOES]
+        if isinstance(getattr(ss, "testes_realizados", []), list)
+        else []
+    )
+    ss.testes_realizados = st.multiselect(
+        "Testes realizados (check list)",
+        options=TESTES_OPCOES,
+        default=default_testes,
+        help="Essas opções serão listadas em 'Testes realizados' no PDF.",
+    )
+
+    ss.descricao_atendimento = st.text_area(
+        "Descrição do Atendimento (o que foi feito / resultado / evidências)",
+        value=ss.descricao_atendimento,
+        height=120,
+    )
+
+    ss.observacoes_pendencias = st.text_area(
+        "Observações / Pendências",
+        value=ss.observacoes_pendencias,
+        height=100,
+    )
+
+
+# ----------------- ETAPA 5 – ACEITE & ASSINATURAS -----------------
+
+
+def step5_aceite_assinaturas() -> None:
+    ss = st.session_state
+    st.subheader("5) Aceite & Assinaturas")
+
+    # ----------------- TÉCNICO -----------------
+    st.markdown("#### Técnico MAMINFO")
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        ss.nome_tecnico = st.text_input(
+            "Nome Técnico", value=ss.nome_tecnico
+        )
+    with c2:
+        ss.doc_tecnico = st.text_input(
+            "Documento Técnico", value=ss.doc_tecnico
+        )
+    with c3:
+        ss.tel_tecnico = st.text_input(
+            "Telefone Técnico", value=ss.tel_tecnico
+        )
+    with c4:
+        ss.dt_tecnico = st.text_input(
+            "Data e hora (Técnico)", value=ss.dt_tecnico
+        )
+
+    st.markdown("### Assinatura do técnico")
+    assinatura_tecnico_png()
+
+    st.markdown("---")
+
+    # ----------------- CLIENTE -----------------
+    st.markdown("#### Cliente")
+
+    c5, c6, c7, c8 = st.columns(4)
+    with c5:
+        ss.nome_cliente = st.text_input(
+            "Nome cliente", value=ss.nome_cliente
+        )
+    with c6:
+        ss.doc_cliente = st.text_input(
+            "Documento cliente", value=ss.doc_cliente
+        )
+    with c7:
+        ss.tel_cliente = st.text_input(
+            "Telefone cliente", value=ss.tel_cliente
+        )
+    with c8:
+        ss.dt_cliente = st.text_input(
+            "Data e hora (Cliente)", value=ss.dt_cliente
+        )
+
+    st.markdown("### Assinatura do cliente")
     assinatura_cliente_png()
 
 
-def scanner_minimo() -> None:
-    """Uploader simples que anexa fotos sem executar OCR."""
+# ----------------- RENDER PRINCIPAL -----------------
+
+
+def render_layout() -> None:
+    """
+    Função chamada por rat_unificado.render().
+    Exibe uma etapa por vez, mostra o progresso e controla a navegação.
+    """
+    apply_dark_full_layout()
+    header_bar()
+
     ss = st.session_state
+    step = _step_selector()
 
-    with st.form("scanner_mam"):
-        fotos = st.file_uploader(
-            "📎 Fotos das etiquetas (opcional)",
-            type=["jpg", "jpeg", "png", "webp"],
-            accept_multiple_files=True,
-            key="mam_fotos",
-        )
+    if step == 1:
+        step1_dados_relatorio()
+    elif step == 2:
+        step2_atendimento_testes()
+    elif step == 3:
+        step3_checklist_tecnico()
+    elif step == 4:
+        step4_materiais_obs()
+    elif step == 5:
+        step5_aceite_assinaturas()
 
-        left, right = st.columns(2)
+    st.markdown("---")
 
-        with left:
-            adicionar = st.form_submit_button("➕ Anexar fotos")
+    if step == 1:
+        col_info, col_next = st.columns([3, 1])
 
-        with right:
-            limpar = st.form_submit_button("🧹 Limpar anexos")
+        with col_info:
+            st.caption("Preencha os campos desta etapa para continuar.")
 
-    if adicionar and fotos:
-        if "photos_to_append" not in ss:
-            ss["photos_to_append"] = []
+        with col_next:
+            if st.button(
+                "Próxima etapa ➡️",
+                type="primary",
+                use_container_width=True,
+                key="btn_proxima_1",
+            ):
+                ss.current_step = 2
+                st.rerun()
 
-        if "seen_hashes" not in ss:
-            ss["seen_hashes"] = set()
+    elif step in (2, 3, 4):
+        col_back, col_info, col_next = st.columns([1, 2, 1])
 
-        adicionadas = 0
+        with col_back:
+            if st.button(
+                "⬅️ Voltar",
+                use_container_width=True,
+                key=f"btn_voltar_{step}",
+            ):
+                ss.current_step = step - 1
+                st.rerun()
 
-        for arquivo in fotos:
-            raw = arquivo.getvalue()
-            fingerprint = hashlib.sha256(raw).hexdigest()
+        with col_info:
+            st.caption(f"Etapa {step} de 5.")
 
-            if fingerprint in ss.seen_hashes:
-                continue
+        with col_next:
+            if st.button(
+                "Próxima etapa ➡️",
+                type="primary",
+                use_container_width=True,
+                key=f"btn_proxima_{step}",
+            ):
+                ss.current_step = step + 1
+                st.rerun()
 
-            ss.photos_to_append.append(raw)
-            ss.seen_hashes.add(fingerprint)
-            adicionadas += 1
+    else:
+        col_back, col_info, col_generate = st.columns([1, 2, 1])
 
-        st.success(f"{adicionadas} foto(s) anexada(s).")
+        with col_back:
+            if st.button(
+                "⬅️ Voltar",
+                use_container_width=True,
+                key="btn_voltar_5",
+            ):
+                ss.current_step = 4
+                st.rerun()
 
-    if limpar:
-        ss.photos_to_append = []
-        ss.seen_hashes = set()
-        st.info("Anexos limpos.")
+        with col_info:
+            st.caption("Revise os dados e gere a RAT.")
 
-
-def foto_gateway_uploader() -> None:
-    ss = st.session_state
-
-    with st.form("gateway_fotos"):
-        fotos = st.file_uploader(
-            "📎 Foto(s) do gateway (obrigatória ao menos 1)",
-            type=["jpg", "jpeg", "png", "webp"],
-            accept_multiple_files=True,
-            key="gw_fotos",
-        )
-
-        adicionar = st.form_submit_button("➕ Adicionar")
-
-    if adicionar and fotos:
-        if "fotos_gateway" not in ss:
-            ss["fotos_gateway"] = []
-
-        for arquivo in fotos:
-            ss.fotos_gateway.append(arquivo.getvalue())
-
-        st.success(f"{len(fotos)} foto(s) adicionada(s).")
+        with col_generate:
+            if st.button(
+                "🧾 Gerar RAT",
+                type="primary",
+                use_container_width=True,
+                key="btn_gerar_rat",
+            ):
+                ss.trigger_generate = True
