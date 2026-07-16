@@ -416,27 +416,19 @@ def step5_fotos_chamado() -> None:
                 try:
                     if isinstance(foto, dict):
                         conteudo = foto.get("conteudo", b"")
-                        nome = foto.get(
-                            "nome",
-                            f"Foto {indice + 1}",
-                        )
-
+                        nome = foto.get("nome", f"Foto {indice + 1}")
+                        foto_hash = foto.get("hash", "")
                     elif hasattr(foto, "getvalue"):
                         conteudo = foto.getvalue()
-                        nome = getattr(
-                            foto,
-                            "name",
-                            f"Foto {indice + 1}",
-                        )
-
+                        nome = getattr(foto, "name", f"Foto {indice + 1}")
+                        foto_hash = hashlib.sha256(conteudo).hexdigest()
                     elif isinstance(foto, (bytes, bytearray)):
                         conteudo = bytes(foto)
                         nome = f"Foto {indice + 1}"
-
+                        foto_hash = hashlib.sha256(conteudo).hexdigest()
                     else:
                         st.warning(
-                            f"Não foi possível visualizar "
-                            f"a foto {indice + 1}."
+                            f"Não foi possível visualizar a foto {indice + 1}."
                         )
                         continue
 
@@ -452,11 +444,27 @@ def step5_fotos_chamado() -> None:
                         use_column_width=True,
                     )
 
+                    if st.button(
+                        "🗑️ Remover esta foto",
+                        key=f"remover_foto_{foto_hash or indice}",
+                        use_container_width=True,
+                    ):
+                        foto_removida = ss.fotos_chamado.pop(indice)
+
+                        if isinstance(foto_removida, dict):
+                            hash_removido = foto_removida.get("hash")
+                            if hash_removido:
+                                ss.fotos_chamado_hashes.discard(hash_removido)
+
+                        ss.fotos_upload_version += 1
+                        st.rerun()
+
                 except Exception as erro:
                     st.warning(
-                        f"Erro ao visualizar a foto "
-                        f"{indice + 1}: {erro}"
+                        f"Erro ao visualizar a foto {indice + 1}: {erro}"
                     )
+
+        st.markdown("---")
 
         if st.button(
             "🗑️ Limpar todas as fotos",
