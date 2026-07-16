@@ -68,7 +68,7 @@ def header_bar() -> None:
 
 
 def _step_selector() -> int:
-    """Mostra o progresso atual em formato visual, sem permitir pular etapas."""
+    """Mostra o progresso atual usando apenas componentes nativos do Streamlit."""
     ss = st.session_state
 
     if "current_step" not in ss:
@@ -89,134 +89,41 @@ def _step_selector() -> int:
     total_steps = len(steps)
     progresso = step / total_steps
 
-    cards = []
+    st.markdown("### Progresso")
+
+    columns = st.columns(total_steps)
 
     for numero, titulo in steps.items():
-        if numero < step:
-            classe = "step-done"
-            icone = "✓"
-        elif numero == step:
-            classe = "step-current"
-            icone = str(numero)
-        else:
-            classe = "step-pending"
-            icone = str(numero)
+        with columns[numero - 1]:
+            if numero < step:
+                st.markdown(
+                    f"<div style='text-align:center'>"
+                    f"<div style='font-size:1.8rem'>✅</div>"
+                    f"<div style='font-size:0.8rem;color:#86efac'>"
+                    f"{titulo}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
 
-        cards.append(
-            f"""
-            <div class="progress-step {classe}">
-                <div class="progress-circle">{icone}</div>
-                <div class="progress-label">{titulo}</div>
-            </div>
-            """
-        )
+            elif numero == step:
+                st.markdown(
+                    f"<div style='text-align:center'>"
+                    f"<div style='font-size:1.8rem'>🔵</div>"
+                    f"<div style='font-size:0.8rem;font-weight:700;color:#ffffff'>"
+                    f"{titulo}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
 
-    st.markdown(
-        """
-        <style>
-            .progress-wrapper {
-                display: flex;
-                align-items: flex-start;
-                justify-content: space-between;
-                gap: 8px;
-                width: 100%;
-                margin: 4px 0 14px 0;
-            }
-
-            .progress-step {
-                position: relative;
-                flex: 1;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                text-align: center;
-                min-width: 0;
-            }
-
-            .progress-step:not(:last-child)::after {
-                content: "";
-                position: absolute;
-                top: 17px;
-                left: calc(50% + 22px);
-                width: calc(100% - 44px);
-                height: 3px;
-                background: #374151;
-                z-index: 0;
-            }
-
-            .progress-step.step-done:not(:last-child)::after {
-                background: #22c55e;
-            }
-
-            .progress-circle {
-                width: 36px;
-                height: 36px;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-weight: 700;
-                border: 2px solid #4b5563;
-                background: #111827;
-                color: #9ca3af;
-                z-index: 1;
-            }
-
-            .step-done .progress-circle {
-                background: #16a34a;
-                border-color: #22c55e;
-                color: #ffffff;
-            }
-
-            .step-current .progress-circle {
-                background: #2563eb;
-                border-color: #60a5fa;
-                color: #ffffff;
-                box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.18);
-            }
-
-            .progress-label {
-                margin-top: 8px;
-                font-size: 0.78rem;
-                line-height: 1.15;
-                color: #9ca3af;
-                word-break: break-word;
-            }
-
-            .step-current .progress-label {
-                color: #ffffff;
-                font-weight: 700;
-            }
-
-            .step-done .progress-label {
-                color: #86efac;
-            }
-
-            @media (max-width: 800px) {
-                .progress-label {
-                    font-size: 0.65rem;
-                }
-
-                .progress-circle {
-                    width: 30px;
-                    height: 30px;
-                }
-
-                .progress-step:not(:last-child)::after {
-                    top: 14px;
-                    left: calc(50% + 18px);
-                    width: calc(100% - 36px);
-                }
-            }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        f'<div class="progress-wrapper">{"".join(cards)}</div>',
-        unsafe_allow_html=True,
-    )
+            else:
+                st.markdown(
+                    f"<div style='text-align:center'>"
+                    f"<div style='font-size:1.8rem'>⚪</div>"
+                    f"<div style='font-size:0.8rem;color:#9ca3af'>"
+                    f"{titulo}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
 
     st.progress(progresso)
     st.caption(
