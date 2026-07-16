@@ -6,6 +6,7 @@
 #   (NÃO mexe em nenhuma posição do PDF, só nos valores).
 
 import os
+import hashlib
 from datetime import date
 
 import streamlit as st
@@ -352,27 +353,35 @@ def step4_materiais_obs() -> None:
 
 def step5_aceite_assinaturas() -> None:
     ss = st.session_state
-    st.subheader("5) Aceite & Assinaturas")
+    st.subheader("5) Aceite, Assinaturas e Fotos")
 
     # ----------------- TÉCNICO -----------------
     st.markdown("#### Técnico MAMINFO")
 
     c1, c2, c3, c4 = st.columns(4)
+
     with c1:
         ss.nome_tecnico = st.text_input(
-            "Nome Técnico", value=ss.nome_tecnico
+            "Nome Técnico",
+            value=ss.nome_tecnico,
         )
+
     with c2:
         ss.doc_tecnico = st.text_input(
-            "Documento Técnico", value=ss.doc_tecnico
+            "Documento Técnico",
+            value=ss.doc_tecnico,
         )
+
     with c3:
         ss.tel_tecnico = st.text_input(
-            "Telefone Técnico", value=ss.tel_tecnico
+            "Telefone Técnico",
+            value=ss.tel_tecnico,
         )
+
     with c4:
         ss.dt_tecnico = st.text_input(
-            "Data e hora (Técnico)", value=ss.dt_tecnico
+            "Data e hora (Técnico)",
+            value=ss.dt_tecnico,
         )
 
     st.markdown("### Assinatura do técnico")
@@ -384,25 +393,112 @@ def step5_aceite_assinaturas() -> None:
     st.markdown("#### Cliente")
 
     c5, c6, c7, c8 = st.columns(4)
+
     with c5:
         ss.nome_cliente = st.text_input(
-            "Nome cliente", value=ss.nome_cliente
+            "Nome cliente",
+            value=ss.nome_cliente,
         )
+
     with c6:
         ss.doc_cliente = st.text_input(
-            "Documento cliente", value=ss.doc_cliente
+            "Documento cliente",
+            value=ss.doc_cliente,
         )
+
     with c7:
         ss.tel_cliente = st.text_input(
-            "Telefone cliente", value=ss.tel_cliente
+            "Telefone cliente",
+            value=ss.tel_cliente,
         )
+
     with c8:
         ss.dt_cliente = st.text_input(
-            "Data e hora (Cliente)", value=ss.dt_cliente
+            "Data e hora (Cliente)",
+            value=ss.dt_cliente,
         )
 
     st.markdown("### Assinatura do cliente")
     ui_componentes.assinatura_cliente_png()
+
+    st.markdown("---")
+
+    # ----------------- FOTOS DO CHAMADO -----------------
+    st.markdown("## 📸 Fotos do Chamado")
+    st.caption(
+        "Selecione todas as fotos que deverão ser incluídas na RAT. "
+        "Nesta primeira etapa, as imagens ficam armazenadas para conferência."
+    )
+
+    if "fotos_chamado" not in ss:
+        ss.fotos_chamado = []
+
+    if "fotos_chamado_hashes" not in ss:
+        ss.fotos_chamado_hashes = set()
+
+    if "fotos_upload_version" not in ss:
+        ss.fotos_upload_version = 0
+
+    novas_fotos = st.file_uploader(
+        "Selecionar fotos do chamado",
+        type=["jpg", "jpeg", "png", "webp"],
+        accept_multiple_files=True,
+        key=f"upload_fotos_chamado_{ss.fotos_upload_version}",
+    )
+
+    if novas_fotos:
+        quantidade_adicionada = 0
+
+        for arquivo in novas_fotos:
+            conteudo = arquivo.getvalue()
+            identificador = hashlib.sha256(conteudo).hexdigest()
+
+            if identificador in ss.fotos_chamado_hashes:
+                continue
+
+            ss.fotos_chamado.append(
+                {
+                    "nome": arquivo.name,
+                    "tipo": arquivo.type,
+                    "conteudo": conteudo,
+                    "hash": identificador,
+                }
+            )
+            ss.fotos_chamado_hashes.add(identificador)
+            quantidade_adicionada += 1
+
+        if quantidade_adicionada:
+            st.success(
+                f"{quantidade_adicionada} nova(s) foto(s) adicionada(s)."
+            )
+
+    if ss.fotos_chamado:
+        st.info(
+            f"Total selecionado: {len(ss.fotos_chamado)} foto(s)."
+        )
+
+        colunas = st.columns(3)
+
+        for indice, foto in enumerate(ss.fotos_chamado):
+            with colunas[indice % 3]:
+                st.image(
+                    foto["conteudo"],
+                    caption=f'{indice + 1}. {foto["nome"]}',
+                    use_container_width=True,
+                )
+
+        if st.button(
+            "🗑️ Limpar todas as fotos",
+            use_container_width=True,
+            key="btn_limpar_fotos_chamado",
+        ):
+            ss.fotos_chamado = []
+            ss.fotos_chamado_hashes = set()
+            ss.fotos_upload_version += 1
+            st.rerun()
+
+    else:
+        st.warning("Nenhuma foto do chamado foi adicionada ainda.")
 
 
 # ----------------- RENDER PRINCIPAL -----------------
