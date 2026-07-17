@@ -273,196 +273,347 @@ def _mark_checklist_tecnico(page: fitz.Page, checklist_dict) -> None:
         page.insert_text((x, y), "X", fontsize=11)
 
 
+
+# =============== PREENCHIMENTO POR COORDENADAS FIXAS ===============
+
+
+def _write_box(
+    page: fitz.Page,
+    rect,
+    value,
+    fontsize: float = 8,
+    align: int = 0,
+) -> None:
+    """Escreve texto em uma área fixa do template."""
+    text = str(value or "").strip()
+
+    if not text:
+        return
+
+    page.insert_textbox(
+        fitz.Rect(*rect),
+        text,
+        fontsize=fontsize,
+        fontname="helv",
+        color=(0, 0, 0),
+        align=align,
+        overlay=True,
+    )
+
+
+def _draw_x(page: fitz.Page, x: float, y: float) -> None:
+    """Desenha um X dentro de uma caixa de seleção."""
+    page.insert_text(
+        (x, y),
+        "X",
+        fontsize=10,
+        fontname="helv",
+        color=(0, 0, 0),
+        overlay=True,
+    )
+
+
+def _insert_signature_fixed(
+    page: fitz.Page,
+    rect,
+    png_bytes,
+) -> None:
+    """Insere assinatura PNG em uma área fixa."""
+    if not png_bytes:
+        return
+
+    page.insert_image(
+        fitz.Rect(*rect),
+        stream=png_bytes,
+        keep_proportion=True,
+        overlay=True,
+    )
+
+
+def _mark_tipo_atendimento_fixed(
+    page: fitz.Page,
+    tipo: str,
+) -> None:
+    value = str(tipo or "").strip().lower()
+
+    positions = {
+        "instala": (38, 301),
+        "verif": (38, 317),
+        "ativ": (159, 301),
+        "retir": (159, 317),
+        "corret": (279, 301),
+        "passagem": (279, 317),
+        "preven": (419, 301),
+        "outro": (419, 317),
+    }
+
+    for key, position in positions.items():
+        if key in value:
+            _draw_x(page, *position)
+            break
+
+
+def _mark_anormalidades_fixed(
+    page: fitz.Page,
+    flags,
+) -> None:
+    if not isinstance(flags, (list, tuple, set)):
+        return
+
+    positions = {
+        "interrup": (41, 422),
+        "sincron": (41, 438),
+        "mensagem": (41, 454),
+        "intermit": (211, 422),
+        "queda": (211, 422),
+        "taxa": (211, 438),
+        "portadora": (211, 454),
+        "lent": (401, 422),
+        "ru": (401, 438),
+        "outro": (401, 454),
+    }
+
+    marked = set()
+
+    for item in flags:
+        normalized = str(item or "").strip().lower()
+
+        for key, position in positions.items():
+            if key in normalized and position not in marked:
+                _draw_x(page, *position)
+                marked.add(position)
+
+
+def _mark_checklist_fixed(
+    page: fitz.Page,
+    checklist,
+) -> None:
+    """
+    Marca Sim/Não por coordenadas fixas, evitando busca ambígua.
+    """
+    if not isinstance(checklist, dict):
+        return
+
+    aliases = {
+        "Teste de circuito comutado": "Teste de circuito normal",
+    }
+
+    rows = {
+        "Circuito corretamente instalado": {
+            "sim": (267, 521),
+            "nao": (306, 521),
+        },
+        "Teste de circuito normal": {
+            "sim": (267, 537),
+            "nao": (306, 537),
+        },
+        "Alimentação adequada": {
+            "sim": (267, 552),
+            "nao": (306, 552),
+        },
+        "Aterramento adequado": {
+            "sim": (267, 568),
+            "nao": (306, 568),
+        },
+        "Mensagem com erro": {
+            "sim": (267, 584),
+            "nao": (306, 584),
+        },
+        "Sem portadora": {
+            "sim": (516, 521),
+            "nao": (558, 521),
+        },
+        "Fiação interna adequada": {
+            "sim": (516, 537),
+            "nao": (558, 537),
+        },
+        "Cabo de rede adequado": {
+            "sim": (516, 552),
+            "nao": (558, 552),
+        },
+        "Equipamentos em condições": {
+            "sim": (516, 568),
+            "nao": (558, 568),
+        },
+        "Ambiente/infra adequada": {
+            "sim": (516, 584),
+            "nao": (558, 584),
+        },
+    }
+
+    for original_item, answer in checklist.items():
+        item = aliases.get(original_item, original_item)
+
+        if item not in rows:
+            continue
+
+        normalized_answer = str(answer or "").strip().lower()
+
+        if normalized_answer == "sim":
+            _draw_x(page, *rows[item]["sim"])
+        elif normalized_answer in ("não", "nao"):
+            _draw_x(page, *rows[item]["nao"])
+
+
+def _mark_tests_fixed(
+    page: fitz.Page,
+    tests,
+) -> None:
+    """
+    Marca os testes disponíveis no template da página 2.
+    Testes não representados são listados dentro da caixa.
+    """
+    if not isinstance(tests, (list, tuple, set)):
+        return
+
+    positions = {
+        "autenticação": (311, 324),
+        "autenticacao": (311, 324),
+        "navegação": (311, 338),
+        "navegacao": (311, 338),
+        "sincronismo": (311, 351),
+        "ping": (311, 365),
+        "latência": (311, 365),
+        "latencia": (311, 365),
+        "throughput": (311, 378),
+        "velocidade": (311, 378),
+        "teste de dados": (311, 378),
+    }
+
+    marked = set()
+    extras = []
+
+    for test in tests:
+        normalized = str(test or "").strip().lower()
+        found = False
+
+        for key, position in positions.items():
+            if key in normalized:
+                if position not in marked:
+                    _draw_x(page, *position)
+                    marked.add(position)
+                found = True
+                break
+
+        if not found and normalized:
+            extras.append(str(test))
+
+    if extras:
+        _write_box(
+            page,
+            (380, 326, 565, 380),
+            "Outros: " + " | ".join(extras),
+            fontsize=7,
+        )
+
+
 # =============== PÁGINA 1 ===============
 
 
 def _fill_page1(page: fitz.Page, ss) -> None:
     """
-    Preenche página 1 da RAT unificada.
+    Preenche a página 1 usando coordenadas fixas do template oficial.
     """
 
-    # ---------- 1) Identificação do Atendimento ----------
+    # 1. Identificação do Atendimento
+    _write_box(page, (36, 82, 205, 101), ss.num_chamado)
+    _write_box(page, (220, 82, 388, 101), ss.num_relatorio)
+    _write_box(page, (402, 82, 565, 101), ss.operadora_contrato)
 
-    insert_right_of(
+    _write_box(page, (36, 118, 565, 136), ss.cliente_razao)
+
+    _write_box(page, (36, 154, 176, 174), ss.cnpj_cpf)
+    _write_box(page, (190, 154, 312, 174), ss.contato_nome)
+    _write_box(
         page,
-        ["Nº Chamado", "N° Chamado", "No Chamado", "Numero Chamado"],
-        ss.num_chamado,
-        dx=8,
-        dy=15,
-    )
-
-    insert_right_of(
-        page,
-        ["Nº Relatório", "N° Relatório", "No Relatório", "Numero Relatório"],
-        ss.num_relatorio,
-        dx=8,
-        dy=15,
-    )
-
-    insert_right_of(
-        page,
-        ["Operadora / Contrato", "Operadora/Contrato", "Operadora Contrato"],
-        ss.operadora_contrato,
-        dx=-25,
-        dy=15,
-    )
-
-    insert_right_of(
-        page,
-        ["Cliente / Razão Social", "Cliente/Razão Social", "Cliente / Razao Social"],
-        ss.cliente_razao,
-        dx=8,
-        dy=15,
-    )
-
-    if getattr(ss, "cnpj_cpf", ""):
-        insert_right_of(
-            page,
-            ["CNPJ/CPF", "CNPJ / CPF"],
-            ss.cnpj_cpf,
-            dx=8,
-            dy=1,
-        )
-
-    insert_right_of(
-        page,
-        ["Contato (nome)", "Contato", "Contato (Nome)"],
-        ss.contato_nome,
-        dx=1,
-        dy=15,
-    )
-
-    insert_right_of(
-        page,
-        ["Telefone / E-mail", "Telefone/E-mail", "Telefone / Email"],
+        (325, 154, 565, 174),
         ss.contato_telefone_email,
-        dx=8,
-        dy=15,
     )
 
-    insert_textbox(
+    _write_box(
         page,
-        ["Endereço Completo", "Endereço completo", "Endereco Completo"],
+        (36, 191, 565, 211),
         ss.endereco_completo,
-        width=500,
-        y_offset=1,
-        height=90,
-        fontsize=9,
-        align=0,
+        fontsize=7.5,
     )
 
-    # ---------- 2) Dados Operacionais ----------
-
-    insert_right_of(
+    # 2. Dados Operacionais
+    _write_box(page, (36, 248, 205, 267), ss.analista_suporte)
+    _write_box(
         page,
-        ["Analista Suporte"],
-        ss.analista_suporte,
-        dx=-25,
-        dy=15,
-    )
-
-    insert_right_of(
-        page,
-        ["Analista Integradora (MAMINFO)", "Analista Integradora"],
+        (220, 248, 388, 267),
         ss.analista_integradora,
-        dx=-110,
-        dy=15,
     )
-
-    insert_right_of(
+    _write_box(
         page,
-        ["Analista validador (NOC / Projetos)", "Analista validador"],
+        (402, 248, 565, 267),
         ss.analista_validador,
-        dx=-130,
-        dy=15,
     )
 
-    _mark_tipo_atendimento(page, getattr(ss, "tipo_atendimento", ""))
-
-    # ---------- 3) Horários e Deslocamento ----------
-
-    data_str = _safe_date_to_str(ss.data_atendimento)
-
-    insert_right_of(
+    _mark_tipo_atendimento_fixed(
         page,
-        ["Data", "Data do atendimento", "Data do Atendimento"],
-        data_str,
-        dx=-2,
-        dy=15,
+        getattr(ss, "tipo_atendimento", ""),
     )
 
-    insert_right_of(
+    # 3. Horários e Deslocamento
+    _write_box(
         page,
-        ["Início", "Inicio"],
+        (38, 356, 142, 371),
+        _safe_date_to_str(ss.data_atendimento),
+        fontsize=8,
+        align=1,
+    )
+    _write_box(
+        page,
+        (154, 356, 238, 371),
         ss.inicio_atend,
-        dx=1,
-        dy=15,
+        fontsize=8,
+        align=1,
     )
-
-    insert_right_of(
+    _write_box(
         page,
-        ["Término", "Termino"],
+        (250, 356, 334, 371),
         ss.termino_atend,
-        dx=-9,
-        dy=15,
+        fontsize=8,
+        align=1,
     )
-
-    insert_right_of(
+    _write_box(
         page,
-        ["Distância (KM)", "Distancia (KM)"],
+        (346, 356, 565, 371),
         _safe_distancia_txt(ss),
-        dx=8,
-        dy=15,
+        fontsize=8,
     )
 
-    # ---------- 4) Anormalidade / Motivo do Chamado ----------
+    # 4. Anormalidade / Motivo
+    _mark_anormalidades_fixed(
+        page,
+        getattr(ss, "anormalidade_flags", []),
+    )
 
-    flags = getattr(ss, "anormalidade_flags", None)
-    _mark_anormalidades(page, flags)
+    # 5. Checklist Técnico
+    _mark_checklist_fixed(
+        page,
+        getattr(ss, "checklist_tecnico", {}),
+    )
 
-    if not flags:
-        insert_textbox(
-            page,
-            [
-                "4. Anormalidade / Motivo do Chamado",
-                "Anormalidade / Motivo do Chamado",
-                "Anormalidade/Motivo do Chamado",
-            ],
-            ss.motivo_chamado,
-            width=520,
-            y_offset=20,
-            height=80,
-            fontsize=9,
-            align=0,
-        )
+    # 6. Aceite do Cliente
+    _write_box(page, (36, 634, 205, 653), ss.nome_cliente)
+    _write_box(page, (220, 634, 388, 653), ss.doc_cliente)
+    _write_box(page, (402, 634, 565, 653), ss.tel_cliente)
 
-    # ---------- 5) Checklist Técnico (SIM / NÃO) ----------
+    _write_box(
+        page,
+        (43, 706, 180, 724),
+        ss.dt_cliente,
+        fontsize=8,
+        align=1,
+    )
 
-    cl = getattr(ss, "checklist_tecnico", None)
-
-    if isinstance(cl, dict) and cl:
-        _mark_checklist_tecnico(page, cl)
-    else:
-        checklist_txt = ""
-        if isinstance(cl, (list, tuple)):
-            checklist_txt = " | ".join(str(x) for x in cl)
-
-        if checklist_txt:
-            insert_textbox(
-                page,
-                [
-                    "5. Checklist Técnico (SIM / NÃO)",
-                    "Checklist Técnico (SIM / NÃO)",
-                    "Checklist Técnico",
-                    "Checklist Tecnico",
-                ],
-                checklist_txt,
-                width=520,
-                y_offset=20,
-                height=90,
-                fontsize=9,
-                align=0,
-            )
+    _insert_signature_fixed(
+        page,
+        (310, 673, 560, 716),
+        getattr(ss, "sig_cli_png", None),
+    )
 
 
 # =============== PÁGINA 2 ===============
@@ -470,173 +621,73 @@ def _fill_page1(page: fitz.Page, ss) -> None:
 
 def _fill_page2(page: fitz.Page, ss) -> None:
     """
-    Preenche página 2:
-      3. Materiais & Equipamentos
-      4. Observações
-      5. Aceite & Assinaturas
+    Preenche a página 2 usando coordenadas fixas do template oficial.
     """
 
-    # ---------- 3) Materiais & Equipamentos ----------
-
-    insert_textbox(
+    # 7. Equipamentos instalados / existentes
+    _write_box(
         page,
-        ["Material utilizado", "Material Utilizado"],
-        ss.material_utilizado,
-        width=520,
-        y_offset=20,
-        height=80,
-        fontsize=9,
-        align=0,
-    )
-
-    insert_textbox(
-        page,
-        [
-            "Equipamentos (Instalados / Existentes no Cliente)",
-            "Equipamentos (Instalados)",
-            "Equipamentos Instalados",
-        ],
+        (36, 107, 565, 215),
         ss.equip_instalados,
-        width=520,
-        y_offset=110,
-        height=80,
-        fontsize=9,
-        align=0,
+        fontsize=8,
     )
 
-    insert_textbox(
+    # 8. Equipamentos retirados
+    _write_box(
         page,
-        ["Equipamentos Retirados (se houver)", "Equipamentos Retirados"],
+        (36, 245, 565, 300),
         ss.equip_retirados,
-        width=520,
-        y_offset=200,
-        height=80,
-        fontsize=9,
-        align=0,
+        fontsize=8,
     )
 
-    # ---------- 4) Observações ----------
-
-    testes_txt = ""
-    if isinstance(ss.testes_realizados, list) and ss.testes_realizados:
-        testes_txt = " | ".join(ss.testes_realizados)
-
-    if testes_txt:
-        insert_textbox(
-            page,
-            ["Testes realizados", "Testes executados"],
-            testes_txt,
-            width=520,
-            y_offset=20,
-            height=70,
-            fontsize=9,
-            align=0,
-            occurrence=1,
-        )
-
-    insert_textbox(
+    # 9. Material utilizado
+    _write_box(
         page,
-        ["Descrição do Atendimento", "Descrição do atendimento"],
+        (36, 329, 296, 383),
+        ss.material_utilizado,
+        fontsize=8,
+    )
+
+    # 10. Testes realizados
+    _mark_tests_fixed(
+        page,
+        getattr(ss, "testes_realizados", []),
+    )
+
+    # 11. Descrição do Atendimento
+    _write_box(
+        page,
+        (38, 412, 563, 525),
         ss.descricao_atendimento,
-        width=520,
-        y_offset=100,
-        height=120,
-        fontsize=9,
-        align=0,
+        fontsize=8,
     )
 
-    insert_textbox(
+    # 12. Observações / Pendências
+    _write_box(
         page,
-        ["Observações / Pendências", "Observacoes / Pendencias"],
+        (38, 560, 563, 651),
         ss.observacoes_pendencias,
-        width=520,
-        y_offset=20,
-        height=100,
-        fontsize=9,
-        align=0,
+        fontsize=8,
     )
 
-    # ---------- 5) Aceite & Assinaturas ----------
+    # 13. Encerramento do Técnico
+    _write_box(page, (36, 682, 205, 701), ss.nome_tecnico)
+    _write_box(page, (220, 682, 388, 701), ss.doc_tecnico)
+    _write_box(page, (402, 682, 565, 701), ss.tel_tecnico)
 
-    # Técnico MAMINFO – textos
-    insert_right_of(
+    _write_box(
         page,
-        ["Nome Técnico", "Nome Tecnico", "Nome do técnico", "Nome do Técnico"],
-        ss.nome_tecnico,
-        dx=8,
-        dy=1,
-    )
-    insert_right_of(
-        page,
-        ["Documento Técnico", "Documento Tecnico"],
-        ss.doc_tecnico,
-        dx=8,
-        dy=1,
-    )
-    insert_right_of(
-        page,
-        ["Telefone Técnico", "Telefone Tecnico"],
-        ss.tel_tecnico,
-        dx=8,
-        dy=1,
-    )
-    insert_right_of(
-        page,
-        ["Data e hora (Técnico)", "Data e hora (Tecnico)"],
+        (43, 753, 180, 771),
         ss.dt_tecnico,
-        dx=8,
-        dy=1,
+        fontsize=8,
+        align=1,
     )
 
-    # Cliente – textos
-    insert_right_of(
+    _insert_signature_fixed(
         page,
-        ["Nome cliente", "Nome Cliente", "Nome do cliente"],
-        ss.nome_cliente,
-        dx=8,
-        dy=1,
+        (310, 721, 560, 765),
+        getattr(ss, "sig_tec_png", None),
     )
-    insert_right_of(
-        page,
-        ["Documento cliente", "Documento Cliente", "Documento"],
-        ss.doc_cliente,
-        dx=8,
-        dy=1,
-    )
-    insert_right_of(
-        page,
-        ["Telefone cliente", "Telefone Cliente", "Telefone"],
-        ss.tel_cliente,
-        dx=8,
-        dy=1,
-    )
-    insert_right_of(
-        page,
-        ["Data e hora (Cliente)", "Data e hora (cliente)"],
-        ss.dt_cliente,
-        dx=8,
-        dy=1,
-    )
-
-    # Assinaturas (PNG) – Técnico e Cliente
-    if ss.sig_tec_png:
-        insert_signature_png(
-            page,
-            ["Técnico MAMINFO", "Tecnico MAMINFO", "Técnico MAMINFO (assinatura)"],
-            ss.sig_tec_png,
-            rel_rect=(0, -40, 200, -5),
-            occurrence=1,
-        )
-
-    if ss.sig_cli_png:
-        insert_signature_png(
-            page,
-            ["Cliente (assinatura)", "Cliente", "Cliente Assinatura"],
-            ss.sig_cli_png,
-            rel_rect=(0, -40, 200, -5),
-            occurrence=1,
-        )
-
 
 
 # =============== FOTOS DO CHAMADO ===============
