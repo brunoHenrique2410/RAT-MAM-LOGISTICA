@@ -301,12 +301,17 @@ def _write_box(
     )
 
 
-def _draw_x(page: fitz.Page, x: float, y: float) -> None:
-    """Desenha um X dentro de uma caixa de seleção."""
+def _draw_x(
+    page: fitz.Page,
+    x: float,
+    y: float,
+    fontsize: float = 8.5,
+) -> None:
+    """Desenha um X centralizado dentro de uma caixa de seleção."""
     page.insert_text(
         (x, y),
         "X",
-        fontsize=10,
+        fontsize=fontsize,
         fontname="helv",
         color=(0, 0, 0),
         overlay=True,
@@ -357,20 +362,21 @@ def _mark_anormalidades_fixed(
     page: fitz.Page,
     flags,
 ) -> None:
+    """Marca as anormalidades no centro exato das caixas."""
     if not isinstance(flags, (list, tuple, set)):
         return
 
     positions = {
-        "interrup": (41, 422),
-        "sincron": (41, 438),
-        "mensagem": (41, 454),
-        "intermit": (211, 422),
-        "queda": (211, 422),
-        "taxa": (211, 438),
-        "portadora": (211, 454),
-        "lent": (401, 422),
-        "ru": (401, 438),
-        "outro": (401, 454),
+        "interrup": (41.5, 420.0),
+        "sincron": (41.5, 436.0),
+        "mensagem": (41.5, 452.0),
+        "intermit": (211.5, 420.0),
+        "queda": (211.5, 420.0),
+        "taxa": (211.5, 436.0),
+        "portadora": (211.5, 452.0),
+        "lent": (401.5, 420.0),
+        "ru": (401.5, 436.0),
+        "outro": (401.5, 452.0),
     }
 
     marked = set()
@@ -389,7 +395,7 @@ def _mark_checklist_fixed(
     checklist,
 ) -> None:
     """
-    Marca Sim/Não por coordenadas fixas, evitando busca ambígua.
+    Marca Sim/Não por coordenadas fixas e centralizadas.
     """
     if not isinstance(checklist, dict):
         return
@@ -400,44 +406,44 @@ def _mark_checklist_fixed(
 
     rows = {
         "Circuito corretamente instalado": {
-            "sim": (267, 521),
-            "nao": (306, 521),
+            "sim": (269.0, 518.5),
+            "nao": (309.5, 518.5),
         },
         "Teste de circuito normal": {
-            "sim": (267, 537),
-            "nao": (306, 537),
+            "sim": (269.0, 534.3),
+            "nao": (309.5, 534.3),
         },
         "Alimentação adequada": {
-            "sim": (267, 552),
-            "nao": (306, 552),
+            "sim": (269.0, 550.0),
+            "nao": (309.5, 550.0),
         },
         "Aterramento adequado": {
-            "sim": (267, 568),
-            "nao": (306, 568),
+            "sim": (269.0, 565.8),
+            "nao": (309.5, 565.8),
         },
         "Mensagem com erro": {
-            "sim": (267, 584),
-            "nao": (306, 584),
+            "sim": (269.0, 581.5),
+            "nao": (309.5, 581.5),
         },
         "Sem portadora": {
-            "sim": (516, 521),
-            "nao": (558, 521),
+            "sim": (519.0, 520.2),
+            "nao": (560.5, 520.2),
         },
         "Fiação interna adequada": {
-            "sim": (516, 537),
-            "nao": (558, 537),
+            "sim": (519.0, 536.0),
+            "nao": (560.5, 536.0),
         },
         "Cabo de rede adequado": {
-            "sim": (516, 552),
-            "nao": (558, 552),
+            "sim": (519.0, 551.8),
+            "nao": (560.5, 551.8),
         },
         "Equipamentos em condições": {
-            "sim": (516, 568),
-            "nao": (558, 568),
+            "sim": (519.0, 567.5),
+            "nao": (560.5, 567.5),
         },
         "Ambiente/infra adequada": {
-            "sim": (516, 584),
-            "nao": (558, 584),
+            "sim": (519.0, 583.3),
+            "nao": (560.5, 583.3),
         },
     }
 
@@ -459,25 +465,22 @@ def _mark_tests_fixed(
     page: fitz.Page,
     tests,
 ) -> None:
-    """
-    Marca os testes disponíveis no template da página 2.
-    Testes não representados são listados dentro da caixa.
-    """
+    """Marca os testes nas caixas corretas da página 2."""
     if not isinstance(tests, (list, tuple, set)):
         return
 
     positions = {
-        "autenticação": (311, 324),
-        "autenticacao": (311, 324),
-        "navegação": (311, 338),
-        "navegacao": (311, 338),
-        "sincronismo": (311, 351),
-        "ping": (311, 365),
-        "latência": (311, 365),
-        "latencia": (311, 365),
-        "throughput": (311, 378),
-        "velocidade": (311, 378),
-        "teste de dados": (311, 378),
+        "autenticação": (305.5, 315.5),
+        "autenticacao": (305.5, 315.5),
+        "navegação": (305.5, 329.0),
+        "navegacao": (305.5, 329.0),
+        "sincronismo": (305.5, 342.5),
+        "ping": (305.5, 356.0),
+        "latência": (305.5, 356.0),
+        "latencia": (305.5, 356.0),
+        "throughput": (305.5, 369.5),
+        "velocidade": (305.5, 369.5),
+        "teste de dados": (305.5, 369.5),
     }
 
     marked = set()
@@ -501,7 +504,7 @@ def _mark_tests_fixed(
     if extras:
         _write_box(
             page,
-            (380, 326, 565, 380),
+            (390, 312, 565, 378),
             "Outros: " + " | ".join(extras),
             fontsize=7,
         )
@@ -512,42 +515,49 @@ def _mark_tests_fixed(
 
 def _fill_page1(page: fitz.Page, ss) -> None:
     """
-    Preenche a página 1 usando coordenadas fixas do template oficial.
+    Preenche a página 1 com os valores abaixo dos títulos originais.
     """
 
+    generated_at = datetime.now()
+    generated_date = generated_at.strftime("%d / %m / %Y")
+    generated_time = generated_at.strftime("%H:%M")
+
     # 1. Identificação do Atendimento
-    _write_box(page, (36, 82, 205, 101), ss.num_chamado)
-    _write_box(page, (220, 82, 388, 101), ss.num_relatorio)
-    _write_box(page, (402, 82, 565, 101), ss.operadora_contrato)
+    _write_box(page, (40, 91, 205, 103), ss.num_chamado, fontsize=9)
+    _write_box(page, (220, 91, 388, 103), ss.num_relatorio, fontsize=9)
+    _write_box(page, (402, 91, 565, 103), ss.operadora_contrato, fontsize=9)
 
-    _write_box(page, (36, 118, 565, 136), ss.cliente_razao)
+    _write_box(page, (40, 129, 565, 142), ss.cliente_razao, fontsize=9)
 
-    _write_box(page, (36, 154, 176, 174), ss.cnpj_cpf)
-    _write_box(page, (190, 154, 312, 174), ss.contato_nome)
+    _write_box(page, (40, 167, 176, 180), ss.cnpj_cpf, fontsize=9)
+    _write_box(page, (192, 167, 312, 180), ss.contato_nome, fontsize=9)
     _write_box(
         page,
-        (325, 154, 565, 174),
+        (325, 167, 565, 180),
         ss.contato_telefone_email,
+        fontsize=9,
     )
 
     _write_box(
         page,
-        (36, 191, 565, 211),
+        (40, 205, 565, 218),
         ss.endereco_completo,
-        fontsize=7.5,
+        fontsize=8,
     )
 
     # 2. Dados Operacionais
-    _write_box(page, (36, 248, 205, 267), ss.analista_suporte)
+    _write_box(page, (40, 256, 205, 270), ss.analista_suporte, fontsize=8.5)
     _write_box(
         page,
-        (220, 248, 388, 267),
+        (220, 256, 388, 270),
         ss.analista_integradora,
+        fontsize=8.5,
     )
     _write_box(
         page,
-        (402, 248, 565, 267),
+        (402, 256, 565, 270),
         ss.analista_validador,
+        fontsize=8.5,
     )
 
     _mark_tipo_atendimento_fixed(
@@ -558,30 +568,31 @@ def _fill_page1(page: fitz.Page, ss) -> None:
     # 3. Horários e Deslocamento
     _write_box(
         page,
-        (38, 356, 142, 371),
+        (48, 359, 142, 374),
         _safe_date_to_str(ss.data_atendimento),
-        fontsize=8,
+        fontsize=10,
         align=1,
     )
     _write_box(
         page,
-        (154, 356, 238, 371),
+        (160, 359, 238, 374),
         ss.inicio_atend,
-        fontsize=8,
+        fontsize=10,
         align=1,
     )
     _write_box(
         page,
-        (250, 356, 334, 371),
+        (255, 359, 334, 374),
         ss.termino_atend,
-        fontsize=8,
+        fontsize=10,
         align=1,
     )
     _write_box(
         page,
-        (346, 356, 565, 371),
+        (352, 359, 565, 374),
         _safe_distancia_txt(ss),
-        fontsize=8,
+        fontsize=10,
+        align=1,
     )
 
     # 4. Anormalidade / Motivo
@@ -597,15 +608,23 @@ def _fill_page1(page: fitz.Page, ss) -> None:
     )
 
     # 6. Aceite do Cliente
-    _write_box(page, (36, 634, 205, 653), ss.nome_cliente)
-    _write_box(page, (220, 634, 388, 653), ss.doc_cliente)
-    _write_box(page, (402, 634, 565, 653), ss.tel_cliente)
+    _write_box(page, (40, 630, 205, 645), ss.nome_cliente, fontsize=9)
+    _write_box(page, (224, 630, 388, 645), ss.doc_cliente, fontsize=9)
+    _write_box(page, (402, 630, 565, 645), ss.tel_cliente, fontsize=9)
 
+    # Data e hora automáticas da geração.
     _write_box(
         page,
-        (43, 706, 180, 724),
-        ss.dt_cliente,
-        fontsize=8,
+        (46, 699, 126, 718),
+        generated_date,
+        fontsize=9,
+        align=1,
+    )
+    _write_box(
+        page,
+        (131, 699, 178, 718),
+        generated_time,
+        fontsize=9,
         align=1,
     )
 
@@ -621,13 +640,17 @@ def _fill_page1(page: fitz.Page, ss) -> None:
 
 def _fill_page2(page: fitz.Page, ss) -> None:
     """
-    Preenche a página 2 usando coordenadas fixas do template oficial.
+    Preenche a página 2 dentro das áreas úteis do template.
     """
+
+    generated_at = datetime.now()
+    generated_date = generated_at.strftime("%d / %m / %Y")
+    generated_time = generated_at.strftime("%H:%M")
 
     # 7. Equipamentos instalados / existentes
     _write_box(
         page,
-        (36, 107, 565, 215),
+        (38, 103, 560, 191),
         ss.equip_instalados,
         fontsize=8,
     )
@@ -635,7 +658,7 @@ def _fill_page2(page: fitz.Page, ss) -> None:
     # 8. Equipamentos retirados
     _write_box(
         page,
-        (36, 245, 565, 300),
+        (38, 239, 560, 278),
         ss.equip_retirados,
         fontsize=8,
     )
@@ -643,7 +666,7 @@ def _fill_page2(page: fitz.Page, ss) -> None:
     # 9. Material utilizado
     _write_box(
         page,
-        (36, 329, 296, 383),
+        (38, 322, 292, 380),
         ss.material_utilizado,
         fontsize=8,
     )
@@ -657,7 +680,7 @@ def _fill_page2(page: fitz.Page, ss) -> None:
     # 11. Descrição do Atendimento
     _write_box(
         page,
-        (38, 412, 563, 525),
+        (38, 405, 560, 526),
         ss.descricao_atendimento,
         fontsize=8,
     )
@@ -665,21 +688,29 @@ def _fill_page2(page: fitz.Page, ss) -> None:
     # 12. Observações / Pendências
     _write_box(
         page,
-        (38, 560, 563, 651),
+        (38, 555, 560, 641),
         ss.observacoes_pendencias,
         fontsize=8,
     )
 
     # 13. Encerramento do Técnico
-    _write_box(page, (36, 682, 205, 701), ss.nome_tecnico)
-    _write_box(page, (220, 682, 388, 701), ss.doc_tecnico)
-    _write_box(page, (402, 682, 565, 701), ss.tel_tecnico)
+    _write_box(page, (40, 679, 205, 694), ss.nome_tecnico, fontsize=9)
+    _write_box(page, (224, 679, 388, 694), ss.doc_tecnico, fontsize=9)
+    _write_box(page, (404, 679, 565, 694), ss.tel_tecnico, fontsize=9)
 
+    # Data e hora automáticas da geração.
     _write_box(
         page,
-        (43, 753, 180, 771),
-        ss.dt_tecnico,
-        fontsize=8,
+        (46, 748, 126, 767),
+        generated_date,
+        fontsize=9,
+        align=1,
+    )
+    _write_box(
+        page,
+        (132, 748, 179, 767),
+        generated_time,
+        fontsize=9,
         align=1,
     )
 
