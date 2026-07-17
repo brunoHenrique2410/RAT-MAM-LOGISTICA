@@ -298,8 +298,7 @@ def _write_box(
 
     area = fitz.Rect(*rect)
     is_multiline = (
-        "
-" in value_text
+        "\n" in value_text
         or len(value_text) > 70
         or area.height >= 28
     )
