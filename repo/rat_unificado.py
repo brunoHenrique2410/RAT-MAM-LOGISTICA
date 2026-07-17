@@ -284,19 +284,77 @@ def _write_box(
     fontsize: float = 8,
     align: int = 0,
 ) -> None:
-    """Escreve texto em uma área fixa do template."""
-    text = str(value or "").strip()
+    """
+    Escreve texto em uma área fixa do template.
 
-    if not text:
+    Para campos de uma linha, usa insert_text(), evitando que o
+    PyMuPDF descarte o conteúdo quando a caixa é baixa.
+    Para textos longos ou com quebra de linha, usa insert_textbox().
+    """
+    value_text = str(value or "").strip()
+
+    if not value_text:
         return
 
-    page.insert_textbox(
-        fitz.Rect(*rect),
-        text,
+    area = fitz.Rect(*rect)
+    is_multiline = (
+        "
+" in value_text
+        or len(value_text) > 70
+        or area.height >= 28
+    )
+
+    if is_multiline:
+        result = page.insert_textbox(
+            area,
+            value_text,
+            fontsize=fontsize,
+            fontname="helv",
+            color=(0, 0, 0),
+            align=align,
+            overlay=True,
+        )
+
+        # Se o texto não couber, tenta novamente com fonte menor.
+        if result < 0:
+            smaller_font = max(5.5, fontsize - 1.5)
+            page.insert_textbox(
+                area,
+                value_text,
+                fontsize=smaller_font,
+                fontname="helv",
+                color=(0, 0, 0),
+                align=align,
+                overlay=True,
+            )
+
+        return
+
+    # Campos simples: escreve diretamente, sem risco de sumir.
+    text_width = fitz.get_text_length(
+        value_text,
+        fontname="helv",
+        fontsize=fontsize,
+    )
+
+    if align == 1:
+        x = area.x0 + max(0, (area.width - text_width) / 2)
+    elif align == 2:
+        x = max(area.x0, area.x1 - text_width)
+    else:
+        x = area.x0
+
+    baseline_y = min(
+        area.y1 - 1,
+        area.y0 + fontsize + 1,
+    )
+
+    page.insert_text(
+        (x, baseline_y),
+        value_text,
         fontsize=fontsize,
         fontname="helv",
         color=(0, 0, 0),
-        align=align,
         overlay=True,
     )
 
